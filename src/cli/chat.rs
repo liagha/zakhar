@@ -7,9 +7,11 @@ use futures::StreamExt;
 use crate::agent::Runner;
 use crate::config::Config;
 use crate::delegate;
+use crate::hooks;
 use crate::invoke::Invoke;
 use crate::registry;
 use crate::session::Session;
+use crate::slash;
 use crate::types::ToolCall;
 
 pub async fn chat(
@@ -65,6 +67,7 @@ pub async fn chat(
         };
         let delegate_allowed = allowed.is_empty() || allowed.contains(&"delegate".to_string());
         let handoff_allowed = allowed.is_empty() || allowed.contains(&"handoff".to_string());
+        let slash_allowed = allowed.is_empty() || allowed.contains(&"slash".to_string());
         if !cfg.agents.is_empty() {
             if delegate_allowed {
                 tools.push(delegate::tool_def(&cfg));
@@ -72,6 +75,9 @@ pub async fn chat(
             if handoff_allowed {
                 tools.push(delegate::handoff_tool_def(&cfg));
             }
+        }
+        if slash_allowed {
+            tools.push(slash::tool_def());
         }
         if plan_mode {
             tools.retain(|t| crate::invoke::READONLY_TOOLS.contains(&t.function.name.as_str()));
@@ -102,6 +108,11 @@ pub async fn chat(
         }
         let text = line.trim().to_string();
         if text.is_empty() {
+            continue;
+        }
+        if let Some(out) = slash::handle_user(&text, &mut session, &mut runner) {
+            println!("{out}");
+            std::io::stdout().flush().ok();
             continue;
         }
 
@@ -304,6 +315,13 @@ pub async fn chat(
                     break;
                 }
 
+                if let Err(e) = hooks::run_pre(&tc.name, &tc.arguments) {
+                    println!("[hooks] ✗ pre-hook blocked {}: {e}", tc.name);
+                    std::io::Write::flush(&mut std::io::stdout()).ok();
+                    outputs.insert(tc.id.clone(), format!("blocked by pre-hook: {e}"));
+                    continue;
+                }
+
                 if tc.name == "delegate" || tc.name == "handoff" {
                     let agent = tc
                         .arguments
@@ -334,9 +352,29 @@ pub async fn chat(
                         delegate_ids.push(tc.id.clone());
                         delegate_kinds.push(kind.clone());
                         delegate_futures.push(Box::pin(async move {
-                            delegate::run(prov_copy, &cfg_clone, &agent_c, &task_c, 0, plan_copy).await
+                            let res = delegate::run(prov_copy, &cfg_clone, &agent_c, &task_c, 0, plan_copy).await;
+                            hooks::run_post(&kind, &serde_json::json!({"agent": agent_c, "task": task_c}), &res);
+                            res
                         }));
                     }
+                } else if tc.name == "slash" {
+                    let cmd = tc
+                        .arguments
+                        .get("command")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let args = tc
+                        .arguments
+                        .get("args")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    println!("[zakhar] → slash {cmd} {args} …");
+                    std::io::Write::flush(&mut std::io::stdout()).ok();
+                    let out = slash::handle_ai(cmd, args, &mut session, &mut runner);
+                    println!("[zakhar] ← slash {cmd} done: {}", out.lines().next().unwrap_or("").chars().take(80).collect::<String>());
+                    std::io::Write::flush(&mut std::io::stdout()).ok();
+                    hooks::run_post(&tc.name, &tc.arguments, &out);
+                    outputs.insert(tc.id.clone(), out);
                 } else {
                     println!("[zakhar] → invoke({}) …", tc.name);
                     std::io::Write::flush(&mut std::io::stdout()).ok();
@@ -348,6 +386,7 @@ pub async fn chat(
                         println!("[zakhar] ← invoke({}) done: {}", tc.name, preview);
                     }
                     std::io::Write::flush(&mut std::io::stdout()).ok();
+                    hooks::run_post(&tc.name, &tc.arguments, &out);
                     outputs.insert(tc.id.clone(), out);
                 }
             }

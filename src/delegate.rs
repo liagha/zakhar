@@ -4,8 +4,10 @@ use serde_json::{json, Value};
 
 use crate::agent::Runner;
 use crate::config::Config;
+use crate::hooks;
 use crate::invoke::Invoke;
 use crate::provider::Provider;
+use crate::slash;
 use crate::types::{Function, Message, Tool, ToolCall};
 
 const MAX_DEPTH: usize = 3;
@@ -153,6 +155,7 @@ pub async fn run(
     };
     let delegate_allowed = allowed.is_empty() || allowed.contains(&"delegate".to_string());
     let handoff_allowed = allowed.is_empty() || allowed.contains(&"handoff".to_string());
+    let slash_allowed = allowed.is_empty() || allowed.contains(&"slash".to_string());
     if depth + 1 < MAX_DEPTH && !cfg.agents.is_empty() {
         if delegate_allowed {
             tools.push(tool_def(cfg));
@@ -160,6 +163,9 @@ pub async fn run(
         if handoff_allowed {
             tools.push(handoff_tool_def(cfg));
         }
+    }
+    if slash_allowed {
+        tools.push(slash::tool_def());
     }
     if plan {
         tools.retain(|t| crate::invoke::READONLY_TOOLS.contains(&t.function.name.as_str()));
@@ -300,6 +306,12 @@ pub async fn run(
         let mut delegate_ids: Vec<String> = Vec::new();
 
         for tc in &tool_calls {
+            if let Err(e) = hooks::run_pre(&tc.name, &tc.arguments) {
+                println!("{prefix} [hooks] ✗ pre-hook blocked {}: {e}", tc.name);
+                std::io::Write::flush(&mut std::io::stdout()).ok();
+                outputs.insert(tc.id.clone(), format!("blocked by pre-hook: {e}"));
+                continue;
+            }
             if tc.name == "delegate" || tc.name == "handoff" {
                 let sub_agent = tc
                     .arguments
@@ -330,11 +342,30 @@ pub async fn run(
                     let depth_next = depth + 1;
                     let plan_copy = plan;
                     let id_clone = tc.id.clone();
+                    let kind_clone = kind.clone();
+                    let args_clone = tc.arguments.clone();
                     delegate_ids.push(id_clone);
                     delegate_futures.push(Box::pin(async move {
-                        run(prov_copy, &cfg_clone, &sub_agent, &sub_task, depth_next, plan_copy).await
+                        let res = run(prov_copy, &cfg_clone, &sub_agent, &sub_task, depth_next, plan_copy).await;
+                        hooks::run_post(&kind_clone, &args_clone, &res);
+                        res
                     }));
                 }
+            } else if tc.name == "slash" {
+                let cmd = tc.arguments.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                let args = tc.arguments.get("args").and_then(|v| v.as_str()).unwrap_or("");
+                println!("{prefix} → slash {cmd} {args} …");
+                std::io::Write::flush(&mut std::io::stdout()).ok();
+                // slash in delegate: use a dummy session that mirrors runner
+                let mut dummy_session = crate::session::Session::new();
+                dummy_session.messages = runner.messages().clone();
+                let out = slash::handle_ai(cmd, args, &mut dummy_session, &mut runner);
+                // sync back if slash modified runner (e.g., /clear)
+                // dummy_session's messages already synced via handle_ai
+                println!("{prefix} ← slash {cmd} done: {}", out.lines().next().unwrap_or("").chars().take(60).collect::<String>());
+                std::io::Write::flush(&mut std::io::stdout()).ok();
+                hooks::run_post(&tc.name, &tc.arguments, &out);
+                outputs.insert(tc.id.clone(), out);
             } else {
                 println!("{prefix} → invoke({}) …", tc.name);
                 std::io::Write::flush(&mut std::io::stdout()).ok();
@@ -342,6 +373,7 @@ pub async fn run(
                 let preview = truncate(&out, 300);
                 println!("{prefix} ← invoke({}) done: {preview}", tc.name);
                 std::io::Write::flush(&mut std::io::stdout()).ok();
+                hooks::run_post(&tc.name, &tc.arguments, &out);
                 outputs.insert(tc.id.clone(), out);
             }
         }

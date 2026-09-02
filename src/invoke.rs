@@ -9,6 +9,13 @@ use crate::types::{Function, Tool};
 type Executor = Box<dyn Fn(&Value) -> anyhow::Result<String> + Send + Sync>;
 
 static TODOS: OnceLock<Mutex<Vec<Todo>>> = OnceLock::new();
+static BG_TASKS: OnceLock<Mutex<HashMap<String, BgTask>>> = OnceLock::new();
+
+struct BgTask {
+    id: String,
+    command: String,
+    file: String,
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct Todo {
@@ -18,7 +25,7 @@ struct Todo {
 }
 
 pub const READONLY_TOOLS: &[&str] = &[
-    "read", "glob", "grep", "ask_user", "todowrite", "skill", "delegate", "handoff",
+    "read", "glob", "grep", "ask_user", "todowrite", "skill", "task_output", "task_list", "slash", "delegate", "handoff",
 ];
 
 pub struct Invoke {
@@ -42,6 +49,8 @@ impl Invoke {
         register_ask_user(&mut tools);
         register_todowrite(&mut tools);
         register_skill(&mut tools);
+        register_task_output(&mut tools);
+        register_task_list(&mut tools);
         Self { tools }
     }
 
@@ -73,14 +82,63 @@ impl Invoke {
 }
 
 fn register_bash(tools: &mut HashMap<String, ToolDef>) {
-    let executor: Executor =
-        Box::new(|args| {
-            let cmd = args["command"]
-                .as_str()
-                .ok_or_else(|| anyhow::anyhow!("missing command"))?;
+    let executor: Executor = Box::new(|args| {
+        let cmd = args["command"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("missing command"))?
+            .to_string();
+        let bg = args
+            .get("run_in_background")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if bg {
+            let id = &uuid::Uuid::new_v4().to_string()[..8];
+            let file = format!("/tmp/zakhar_bg_{}.log", id);
+            std::fs::write(&file, "")?;
+            let file_clone = file.clone();
+            let cmd_clone = cmd.clone();
+            let id_owned = id.to_string();
+            std::thread::spawn(move || {
+                let out = std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg(&cmd_clone)
+                    .output();
+                let mut content = String::new();
+                match out {
+                    Ok(o) => {
+                        if !o.stdout.is_empty() {
+                            content.push_str(&String::from_utf8_lossy(&o.stdout));
+                        }
+                        if !o.stderr.is_empty() {
+                            if !content.is_empty() {
+                                content.push('\n');
+                            }
+                            content.push_str(&String::from_utf8_lossy(&o.stderr));
+                        }
+                        if content.is_empty() {
+                            content = format!("exit code: {}", o.status.code().unwrap_or(-1));
+                        } else {
+                            content.push_str(&format!("\n[exit code: {}]", o.status.code().unwrap_or(-1)));
+                        }
+                    }
+                    Err(e) => content = format!("spawn error: {e}"),
+                }
+                let _ = std::fs::write(&file_clone, content);
+            });
+            let map = BG_TASKS.get_or_init(|| Mutex::new(HashMap::new()));
+            map.lock().unwrap().insert(
+                id.to_string(),
+                BgTask {
+                    id: id_owned.clone(),
+                    command: cmd.clone(),
+                    file: file.clone(),
+                },
+            );
+            Ok(format!("background task {id_owned} started: {cmd} (log: {file}) use task_output to check"))
+        } else {
             let output = std::process::Command::new("sh")
                 .arg("-c")
-                .arg(cmd)
+                .arg(&cmd)
                 .output()?;
             let mut result = String::new();
             if !output.stdout.is_empty() {
@@ -96,7 +154,8 @@ fn register_bash(tools: &mut HashMap<String, ToolDef>) {
                 result = format!("exit code: {}", output.status.code().unwrap_or(-1));
             }
             Ok(result)
-        });
+        }
+    });
     tools.insert(
         "bash".to_string(),
         ToolDef {
@@ -104,16 +163,86 @@ fn register_bash(tools: &mut HashMap<String, ToolDef>) {
                 tool_type: "function".to_string(),
                 function: Function {
                     name: "bash".to_string(),
-                    description: "Run a shell command. Returns stdout+stderr.".to_string(),
+                    description: "Run a shell command. Returns stdout+stderr. Set run_in_background=true to run without waiting, then use task_output/task_list.".to_string(),
                     parameters: json!({
                         "type": "object",
                         "properties": {
-                            "command": {
-                                "type": "string",
-                                "description": "Shell command to execute"
-                            }
+                            "command": { "type": "string", "description": "Shell command to execute" },
+                            "run_in_background": { "type": "boolean", "description": "Run in background, return task id immediately (default false)" }
                         },
                         "required": ["command"]
+                    }),
+                },
+            },
+            executor,
+        },
+    );
+}
+
+fn register_task_output(tools: &mut HashMap<String, ToolDef>) {
+    let executor: Executor = Box::new(|args| {
+        let id = args.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
+        if id.is_empty() {
+            anyhow::bail!("missing task_id");
+        }
+        let map = BG_TASKS.get().ok_or_else(|| anyhow::anyhow!("no background tasks"))?;
+        let tasks = map.lock().unwrap();
+        let task = tasks.get(id).ok_or_else(|| anyhow::anyhow!("unknown task {id}. Use task_list"))?;
+        let content = std::fs::read_to_string(&task.file).unwrap_or_else(|_| "(no output yet)".to_string());
+        if content.is_empty() {
+            Ok(format!("task {id} ({}) still running, log: {} (empty so far)", task.command, task.file))
+        } else {
+            Ok(format!("task {id} ({}):\n{}", task.command, content))
+        }
+    });
+    tools.insert(
+        "task_output".to_string(),
+        ToolDef {
+            tool: Tool {
+                tool_type: "function".to_string(),
+                function: Function {
+                    name: "task_output".to_string(),
+                    description: "Get output of a background bash task. Use task_list to see ids.".to_string(),
+                    parameters: json!({
+                        "type": "object",
+                        "properties": {
+                            "task_id": { "type": "string", "description": "Background task id from bash run_in_background" }
+                        },
+                        "required": ["task_id"]
+                    }),
+                },
+            },
+            executor,
+        },
+    );
+}
+
+fn register_task_list(tools: &mut HashMap<String, ToolDef>) {
+    let executor: Executor = Box::new(|_args| {
+        let map = BG_TASKS.get().ok_or_else(|| anyhow::anyhow!("no background tasks yet"))?;
+        let tasks = map.lock().unwrap();
+        if tasks.is_empty() {
+            return Ok("no background tasks".to_string());
+        }
+        let mut out = String::new();
+        for (id, t) in tasks.iter() {
+            let size = std::fs::metadata(&t.file).map(|m| m.len()).unwrap_or(0);
+            out.push_str(&format!("{}: {} (log: {}, {} bytes)\n", id, t.command, t.file, size));
+        }
+        Ok(out)
+    });
+    tools.insert(
+        "task_list".to_string(),
+        ToolDef {
+            tool: Tool {
+                tool_type: "function".to_string(),
+                function: Function {
+                    name: "task_list".to_string(),
+                    description: "List background bash tasks with ids and commands.".to_string(),
+                    parameters: json!({
+                        "type": "object",
+                        "properties": {},
+                        "required": []
                     }),
                 },
             },

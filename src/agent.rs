@@ -34,6 +34,14 @@ impl<'a> Runner<'a> {
         self.messages.push(message);
     }
 
+    pub fn messages(&self) -> &Vec<Message> {
+        &self.messages
+    }
+
+    pub fn messages_mut(&mut self) -> &mut Vec<Message> {
+        &mut self.messages
+    }
+
     pub fn request(&self) -> ChatRequest {
         ChatRequest {
             model: self.model.clone(),
