@@ -1,0 +1,37 @@
+[package]
+name = "zakhar"
+version = "0.1.0"
+edition = "2024"
+description = "Multi-agent CLI tool for working with AI coding models"
+license = "MIT"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+clap = { version = "4", features = ["derive", "env"] }
+clap_complete = "4"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+thiserror = "2"
+anyhow = "1"
+futures-util = "0.3"
+tokio-stream = "0.1"
+dirs = "5"
+async-trait = "0.1"
+futures = "0.3"
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dotenvy = "0.15"
+colored = "2"
+regex = "1"
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4"] }
+tempfile = "3"
+shellexpand = "3"
+glob = "0.3"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"

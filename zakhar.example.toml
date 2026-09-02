@@ -1,0 +1,39 @@
+default_provider = "zen"
+default_model = "big-pickle"
+
+[providers.zen]
+api_type = "openai"
+base_url = "https://opencode.ai/zen/v1"
+api_key = "{env:OPENCODE_API_KEY}"
+default_model = "big-pickle"
+user_agent = "opencode/1.18.25"
+models = [
+    "big-pickle",
+    "deepseek-v4-flash-free",
+    "mimo-v2.5-free",
+    "ling-3.0-flash-fin-free",
+    "nemotron-3-ultra-free",
+    "nemotron-3.5-lightning-free",
+    "muse-spark-1.2-contributor-free",
+    "laguna-s-2.1-free",
+]
+
+[agents.default]
+model = "big-pickle"
+prompt = "You are zakhar, the primary coding assistant. You coordinate specialists via the delegate tool when a task fits another agent better."
+# tools = [] means all tools; explicit list filters. Available: bash, read, write, edit, glob, grep, delegate
+
+[agents.explorer]
+model = "big-pickle"
+prompt = "You are the explorer agent. You quickly scan the codebase with glob/grep/read and summarize findings. Be concise and factual."
+tools = ["read", "glob", "grep"]
+
+[agents.coder]
+model = "big-pickle"
+prompt = "You are the coder agent. You write and edit files with write/edit/bash. Keep changes minimal and correct. Verify with bash when needed. You can delegate to reviewer via delegate or hand off via handoff."
+tools = ["read", "write", "edit", "bash", "glob", "grep", "delegate", "handoff"]
+
+[agents.reviewer]
+model = "big-pickle"
+prompt = "You are the reviewer agent. You check code for bugs, style, and tests. Suggest concrete fixes."
+tools = ["read", "grep", "glob"]
