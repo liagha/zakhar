@@ -3,6 +3,7 @@ mod cli;
 mod config;
 mod delegate;
 mod invoke;
+mod memory;
 mod provider;
 mod registry;
 mod session;
@@ -30,6 +31,8 @@ enum Command {
         invoke: bool,
         #[arg(long)]
         auto: bool,
+        #[arg(long)]
+        plan: bool,
     },
     Models {
         provider: Option<String>,
@@ -56,7 +59,8 @@ async fn main() -> anyhow::Result<()> {
             agent,
             invoke,
             auto,
-        } => cli::chat(provider, model, agent, invoke, auto).await?,
+            plan,
+        } => cli::chat(provider, model, agent, invoke, auto, plan).await?,
         Command::Models { provider } => cli::models(provider).await?,
         Command::Serve { port } => cli::serve(port).await?,
     }

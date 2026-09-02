@@ -12,9 +12,9 @@
     "semantic_hash": ""
   },
   "src/cli/chat.rs": {
-    "mtime": 1788366474.0645597,
-    "seen": 1788366714.451192,
-    "ast_hash": "55c3041d8bf857ef7b83a77714380e4a",
+    "mtime": 1788367001.7818608,
+    "seen": 1788367220.7856061,
+    "ast_hash": "ca5bf27d7556665b39e8f9dab5166fdf",
     "semantic_hash": ""
   },
   "src/cli/mod.rs": {
@@ -42,9 +42,9 @@
     "semantic_hash": ""
   },
   "src/delegate.rs": {
-    "mtime": 1788366480.6094894,
-    "seen": 1788366714.4512103,
-    "ast_hash": "c4a733ae4501492d972f3d548b231fe5",
+    "mtime": 1788366999.0808353,
+    "seen": 1788367220.785628,
+    "ast_hash": "63b064af0ff87729bbff0a3619ae9d77",
     "semantic_hash": ""
   },
   "src/invoke.rs": {

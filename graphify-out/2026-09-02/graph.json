@@ -913,7 +913,7 @@
       "file_type": "code",
       "norm_label": "compact_args()",
       "source_file": "src/cli/chat.rs",
-      "source_location": "L334"
+      "source_location": "L383"
     },
     {
       "id": "src_cli_chat_compact_args_object",
@@ -924,7 +924,7 @@
       "file_type": "code",
       "norm_label": "compact_args_object()",
       "source_file": "src/cli/chat.rs",
-      "source_location": "L373"
+      "source_location": "L422"
     },
     {
       "id": "src_cli_chat_compact_args_truncates",
@@ -935,7 +935,7 @@
       "file_type": "code",
       "norm_label": "compact_args_truncates()",
       "source_file": "src/cli/chat.rs",
-      "source_location": "L381"
+      "source_location": "L430"
     },
     {
       "id": "src_cli_chat_rs_option",
@@ -990,7 +990,7 @@
       "file_type": "code",
       "norm_label": "toolcallpartaccum",
       "source_file": "src/cli/chat.rs",
-      "source_location": "L391"
+      "source_location": "L440"
     },
     {
       "id": "src_cli_chat_truncate",
@@ -1001,7 +1001,7 @@
       "file_type": "code",
       "norm_label": "truncate()",
       "source_file": "src/cli/chat.rs",
-      "source_location": "L359"
+      "source_location": "L408"
     },
     {
       "id": "src_cli_mod",
@@ -2112,7 +2112,18 @@
       "file_type": "code",
       "norm_label": "compact_args()",
       "source_file": "src/delegate.rs",
-      "source_location": "L271"
+      "source_location": "L365"
+    },
+    {
+      "id": "src_delegate_handoff_tool_def",
+      "label": "handoff_tool_def()",
+      "_origin": "ast",
+      "community": 9,
+      "community_name": "delegate.rs",
+      "file_type": "code",
+      "norm_label": "handoff_tool_def()",
+      "source_file": "src/delegate.rs",
+      "source_location": "L58"
     },
     {
       "id": "src_delegate_rs_config",
@@ -2156,7 +2167,7 @@
       "file_type": "code",
       "norm_label": "run()",
       "source_file": "src/delegate.rs",
-      "source_location": "L58"
+      "source_location": "L102"
     },
     {
       "id": "src_delegate_tool_def",
@@ -2178,7 +2189,7 @@
       "file_type": "code",
       "norm_label": "toolcallpartaccum",
       "source_file": "src/delegate.rs",
-      "source_location": "L305"
+      "source_location": "L399"
     },
     {
       "id": "src_delegate_truncate",
@@ -2189,7 +2200,7 @@
       "file_type": "code",
       "norm_label": "truncate()",
       "source_file": "src/delegate.rs",
-      "source_location": "L296"
+      "source_location": "L390"
     }
   ],
   "links": [
@@ -2226,7 +2237,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/cli/chat.rs",
-      "source_location": "L375",
+      "source_location": "L424",
       "weight": 1.0
     },
     {
@@ -2238,7 +2249,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/cli/chat.rs",
-      "source_location": "L384",
+      "source_location": "L433",
       "weight": 1.0
     },
     {
@@ -2262,7 +2273,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/delegate.rs",
-      "source_location": "L292",
+      "source_location": "L386",
       "weight": 1.0
     },
     {
@@ -2274,7 +2285,19 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/delegate.rs",
-      "source_location": "L102",
+      "source_location": "L148",
+      "weight": 1.0
+    },
+    {
+      "source": "src_delegate_run",
+      "target": "src_delegate_handoff_tool_def",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/delegate.rs",
+      "source_location": "L151",
       "weight": 1.0
     },
     {
@@ -2286,7 +2309,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/delegate.rs",
-      "source_location": "L259",
+      "source_location": "L327",
       "weight": 1.0
     },
     {
@@ -2646,7 +2669,7 @@
       "confidence_score": 1.0,
       "context": "field",
       "source_file": "src/cli/chat.rs",
-      "source_location": "L394",
+      "source_location": "L443",
       "weight": 1.0
     },
     {
@@ -2706,7 +2729,7 @@
       "confidence_score": 1.0,
       "context": "field",
       "source_file": "src/delegate.rs",
-      "source_location": "L308",
+      "source_location": "L402",
       "weight": 1.0
     },
     {
@@ -4542,7 +4565,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/cli/chat.rs",
-      "source_location": "L334",
+      "source_location": "L383",
       "weight": 1.0
     },
     {
@@ -4566,11 +4589,11 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/delegate.rs",
-      "source_location": "L271",
+      "source_location": "L365",
       "weight": 1.0
     },
     {
-      "source": "src_delegate_run",
+      "source": "src_delegate_handoff_tool_def",
       "target": "src_delegate_rs_config",
       "relation": "references",
       "_origin": "ast",
@@ -4583,6 +4606,18 @@
     },
     {
       "source": "src_delegate_run",
+      "target": "src_delegate_rs_config",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "parameter_type",
+      "source_file": "src/delegate.rs",
+      "source_location": "L102",
+      "weight": 1.0
+    },
+    {
+      "source": "src_delegate_run",
       "target": "src_provider_mod_provider",
       "relation": "references",
       "_origin": "ast",
@@ -4590,7 +4625,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/delegate.rs",
-      "source_location": "L58",
+      "source_location": "L102",
       "weight": 1.0
     },
     {
@@ -4950,7 +4985,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "src/cli/chat.rs",
-      "source_location": "L334",
+      "source_location": "L383",
       "weight": 1.0
     },
     {
@@ -4962,7 +4997,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "src/cli/chat.rs",
-      "source_location": "L359",
+      "source_location": "L408",
       "weight": 1.0
     },
     {
@@ -5022,7 +5057,19 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "src/delegate.rs",
-      "source_location": "L271",
+      "source_location": "L365",
+      "weight": 1.0
+    },
+    {
+      "source": "src_delegate_handoff_tool_def",
+      "target": "src_types_tool",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "return_type",
+      "source_file": "src/delegate.rs",
+      "source_location": "L58",
       "weight": 1.0
     },
     {
@@ -5034,7 +5081,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "src/delegate.rs",
-      "source_location": "L58",
+      "source_location": "L102",
       "weight": 1.0
     },
     {
@@ -5058,7 +5105,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "src/delegate.rs",
-      "source_location": "L296",
+      "source_location": "L390",
       "weight": 1.0
     },
     {
@@ -5518,7 +5565,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/cli/chat.rs",
-      "source_location": "L334",
+      "source_location": "L383",
       "weight": 1.0
     },
     {
@@ -5529,7 +5576,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/cli/chat.rs",
-      "source_location": "L359",
+      "source_location": "L408",
       "weight": 1.0
     },
     {
@@ -5540,7 +5587,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/cli/chat.rs",
-      "source_location": "L373",
+      "source_location": "L422",
       "weight": 1.0
     },
     {
@@ -5551,7 +5598,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/cli/chat.rs",
-      "source_location": "L381",
+      "source_location": "L430",
       "weight": 1.0
     },
     {
@@ -5562,7 +5609,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/cli/chat.rs",
-      "source_location": "L391",
+      "source_location": "L440",
       "weight": 1.0
     },
     {
@@ -5622,6 +5669,17 @@
     },
     {
       "source": "src_delegate",
+      "target": "src_delegate_run",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/delegate.rs",
+      "source_location": "L102",
+      "weight": 1.0
+    },
+    {
+      "source": "src_delegate",
       "target": "src_delegate_tool_def",
       "relation": "contains",
       "_origin": "ast",
@@ -5639,7 +5697,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/delegate.rs",
-      "source_location": "L271",
+      "source_location": "L365",
       "weight": 1.0
     },
     {
@@ -5650,7 +5708,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/delegate.rs",
-      "source_location": "L296",
+      "source_location": "L390",
       "weight": 1.0
     },
     {
@@ -5661,12 +5719,12 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/delegate.rs",
-      "source_location": "L305",
+      "source_location": "L399",
       "weight": 1.0
     },
     {
       "source": "src_delegate",
-      "target": "src_delegate_run",
+      "target": "src_delegate_handoff_tool_def",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",

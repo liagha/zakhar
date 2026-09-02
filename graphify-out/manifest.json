@@ -12,9 +12,9 @@
     "semantic_hash": ""
   },
   "src/cli/chat.rs": {
-    "mtime": 1788367001.7818608,
-    "seen": 1788367220.7856061,
-    "ast_hash": "ca5bf27d7556665b39e8f9dab5166fdf",
+    "mtime": 1788367581.6472783,
+    "seen": 1788367764.1070933,
+    "ast_hash": "ec9b35abb47489a8f613ee0d1b98485c",
     "semantic_hash": ""
   },
   "src/cli/mod.rs": {
@@ -42,21 +42,21 @@
     "semantic_hash": ""
   },
   "src/delegate.rs": {
-    "mtime": 1788366999.0808353,
-    "seen": 1788367220.785628,
-    "ast_hash": "63b064af0ff87729bbff0a3619ae9d77",
+    "mtime": 1788367578.1122763,
+    "seen": 1788367764.1071062,
+    "ast_hash": "f79e5feec093ee8e1700b79344acf944",
     "semantic_hash": ""
   },
   "src/invoke.rs": {
-    "mtime": 1788366463.165677,
-    "seen": 1788366714.4512126,
-    "ast_hash": "10a12773d37664ec2f0ffe01c15bc263",
+    "mtime": 1788367739.821272,
+    "seen": 1788367764.1071084,
+    "ast_hash": "d72c77d8821d20c6a264bc6905fed574",
     "semantic_hash": ""
   },
   "src/main.rs": {
-    "mtime": 1788363826.9664302,
-    "seen": 1788364575.709951,
-    "ast_hash": "78fd47ec0981b48bb4c34c25bd36334c",
+    "mtime": 1788367537.5342457,
+    "seen": 1788367764.1071107,
+    "ast_hash": "48b0d826ee98dc419c6698f2bfe4cfe4",
     "semantic_hash": ""
   },
   "src/provider/mod.rs": {
@@ -105,6 +105,12 @@
     "mtime": 1788356048.6426651,
     "seen": 1788364575.709973,
     "ast_hash": "66b863af5af06f49aa145e61fe99b47f",
+    "semantic_hash": ""
+  },
+  "src/memory.rs": {
+    "mtime": 1788367739.8222718,
+    "seen": 1788367764.1071131,
+    "ast_hash": "0b653cf39a8cf628a5c2a3b84d5f76cd",
     "semantic_hash": ""
   }
 }

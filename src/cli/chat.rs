@@ -18,6 +18,7 @@ pub async fn chat(
     agent: Option<String>,
     invoke_flag: bool,
     auto_approve: bool,
+    plan_mode: bool,
 ) -> anyhow::Result<()> {
     let cfg = Config::load()?;
     let registry = registry::build(&cfg);
@@ -45,6 +46,16 @@ pub async fn chat(
     let mut session = Session::new();
     let mut runner = Runner::new(p, model.clone(), agent_cfg);
 
+    if let Some(mem) = crate::memory::load() {
+        runner.push(crate::types::Message::system(format!("Project memory:\n{mem}")));
+    }
+    if plan_mode {
+        runner.push(crate::types::Message::system(
+            "PLAN MODE: read-only. Do not use write/edit/bash to modify files. Use todowrite to plan, ask_user to clarify, and delegate/handoff to specialists. When plan is complete, summarize without making edits.".to_string(),
+        ));
+        println!("[zakhar] ⚑ plan mode: read-only");
+    }
+
     if let Some(inv) = &invoke {
         let allowed = agent_cfg.map(|a| a.tools.as_slice()).unwrap_or(&[]);
         let mut tools = if allowed.is_empty() {
@@ -62,6 +73,10 @@ pub async fn chat(
                 tools.push(delegate::handoff_tool_def(&cfg));
             }
         }
+        if plan_mode {
+            tools.retain(|t| crate::invoke::READONLY_TOOLS.contains(&t.function.name.as_str()));
+            println!("[zakhar] plan mode: tools filtered to {} readonly", tools.len());
+        }
         runner.set_tools(tools);
     }
 
@@ -69,7 +84,11 @@ pub async fn chat(
         runner.push(msg.clone());
     }
 
-    println!("zakhar [{provider_id}/{model}]  ctrl+d to exit");
+    if plan_mode {
+        println!("zakhar [{provider_id}/{model}] plan ⚑  ctrl+d to exit");
+    } else {
+        println!("zakhar [{provider_id}/{model}]  ctrl+d to exit");
+    }
 
     let mut allow_all = false;
     let mut line = String::new();
@@ -311,10 +330,11 @@ pub async fn chat(
                         let prov_copy: &dyn crate::provider::Provider = p;
                         let agent_c = agent.clone();
                         let task_c = task.clone();
+                        let plan_copy = plan_mode;
                         delegate_ids.push(tc.id.clone());
                         delegate_kinds.push(kind.clone());
                         delegate_futures.push(Box::pin(async move {
-                            delegate::run(prov_copy, &cfg_clone, &agent_c, &task_c, 0).await
+                            delegate::run(prov_copy, &cfg_clone, &agent_c, &task_c, 0, plan_copy).await
                         }));
                     }
                 } else {

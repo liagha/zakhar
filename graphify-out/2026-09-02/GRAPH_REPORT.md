@@ -1,11 +1,11 @@
 # Graph Report - zakhar  (2026-09-02)
 
 ## Corpus Check
-- 18 files · ~5,593 words
+- 18 files · ~6,054 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 198 nodes · 374 edges · 14 communities (13 shown, 1 thin omitted)
+- 199 nodes · 378 edges · 14 communities (13 shown, 1 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
@@ -29,10 +29,10 @@
 2. `Provider` - 12 edges
 3. `Registry` - 11 edges
 4. `SseStream` - 11 edges
-5. `ToolDef` - 10 edges
-6. `OpenAI` - 10 edges
-7. `ToolCall` - 10 edges
-8. `Tool` - 10 edges
+5. `Tool` - 11 edges
+6. `ToolDef` - 10 edges
+7. `OpenAI` - 10 edges
+8. `ToolCall` - 10 edges
 9. `parse()` - 9 edges
 10. `ChatRequest` - 9 edges
 
@@ -43,10 +43,10 @@
   src/agent.rs → src/types.rs
 - `tool_def()` --references--> `Tool`  [EXTRACTED]
   src/delegate.rs → src/types.rs
+- `handoff_tool_def()` --references--> `Tool`  [EXTRACTED]
+  src/delegate.rs → src/types.rs
 - `run()` --references--> `Provider`  [EXTRACTED]
   src/delegate.rs → src/provider/mod.rs
-- `ToolDef` --references--> `Tool`  [EXTRACTED]
-  src/invoke.rs → src/types.rs
 
 ## Import Cycles
 - None detected.
@@ -90,8 +90,8 @@ Cohesion: 0.25
 Nodes (7): dir(), PathBuf, Result, Self, String, Vec, Session
 
 ### Community 9 - "delegate.rs"
-Cohesion: 0.44
-Nodes (8): compact_args(), Config, String, Value, run(), tool_def(), ToolCallPartAccum, truncate()
+Cohesion: 0.42
+Nodes (9): compact_args(), handoff_tool_def(), Config, String, Value, run(), tool_def(), ToolCallPartAccum (+1 more)
 
 ### Community 10 - "Command"
 Cohesion: 0.33
@@ -110,11 +110,11 @@ Nodes (5): Config, Setup, Usage, User-Agent note, zakhar
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `Message` connect `Message` to `openai.rs`, `Session`, `Provider`, `provider/types.rs`?**
-  _High betweenness centrality (0.209) - this node is a cross-community bridge._
+  _High betweenness centrality (0.207) - this node is a cross-community bridge._
 - **Why does `Registry` connect `Registry` to `openai.rs`, `chat.rs`, `Provider`?**
-  _High betweenness centrality (0.159) - this node is a cross-community bridge._
+  _High betweenness centrality (0.158) - this node is a cross-community bridge._
 - **Why does `ToolCall` connect `Message` to `chat.rs`?**
-  _High betweenness centrality (0.143) - this node is a cross-community bridge._
+  _High betweenness centrality (0.141) - this node is a cross-community bridge._
 - **What connects `zakhar`, `Setup`, `Usage` to the rest of the system?**
   _4 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `openai.rs` be split into smaller, more focused modules?**

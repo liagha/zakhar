@@ -1,13 +1,18 @@
 # Graph Report - zakhar  (2026-09-02)
 
 ## Corpus Check
-- 18 files · ~6,054 words
+- 19 files · ~7,183 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 199 nodes · 378 edges · 14 communities (13 shown, 1 thin omitted)
+- 207 nodes · 399 edges · 15 communities (14 shown, 1 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
+
+## Graph Freshness
+- Built from commit: `f963fea9`
+- Run `git rev-parse HEAD` and compare to check if the graph is stale.
+- Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - openai.rs
@@ -23,14 +28,15 @@
 - Command
 - zakhar
 - zakhar
+- load
 
 ## God Nodes (most connected - your core abstractions)
 1. `Message` - 16 edges
-2. `Provider` - 12 edges
-3. `Registry` - 11 edges
-4. `SseStream` - 11 edges
-5. `Tool` - 11 edges
-6. `ToolDef` - 10 edges
+2. `ToolDef` - 13 edges
+3. `Provider` - 12 edges
+4. `Registry` - 11 edges
+5. `SseStream` - 11 edges
+6. `Tool` - 11 edges
 7. `OpenAI` - 10 edges
 8. `ToolCall` - 10 edges
 9. `parse()` - 9 edges
@@ -51,7 +57,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (14 total, 1 thin omitted)
+## Communities (15 total, 1 thin omitted)
 
 ### Community 0 - "openai.rs"
 Cohesion: 0.11
@@ -70,8 +76,8 @@ Cohesion: 0.16
 Nodes (12): AgentCfg, DeltaStream, Option, Result, Self, String, Vec, Runner (+4 more)
 
 ### Community 4 - "invoke.rs"
-Cohesion: 0.28
-Nodes (14): Executor, Invoke, register_bash(), register_edit(), register_glob(), register_grep(), register_read(), register_write() (+6 more)
+Cohesion: 0.26
+Nodes (18): Executor, Invoke, register_ask_user(), register_bash(), register_edit(), register_glob(), register_grep(), register_read() (+10 more)
 
 ### Community 5 - "Registry"
 Cohesion: 0.17
@@ -101,6 +107,10 @@ Nodes (6): Cli, Command, main(), Option, Result, String
 Cohesion: 0.33
 Nodes (5): Config, Setup, Usage, User-Agent note, zakhar
 
+### Community 14 - "load"
+Cohesion: 0.50
+Nodes (3): load(), Option, String
+
 ## Knowledge Gaps
 - **4 isolated node(s):** `zakhar`, `Setup`, `Usage`, `User-Agent note`
   These have ≤1 connection - possible missing edges or undocumented components.
@@ -110,11 +120,11 @@ Nodes (5): Config, Setup, Usage, User-Agent note, zakhar
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `Message` connect `Message` to `openai.rs`, `Session`, `Provider`, `provider/types.rs`?**
-  _High betweenness centrality (0.207) - this node is a cross-community bridge._
+  _High betweenness centrality (0.191) - this node is a cross-community bridge._
 - **Why does `Registry` connect `Registry` to `openai.rs`, `chat.rs`, `Provider`?**
-  _High betweenness centrality (0.158) - this node is a cross-community bridge._
-- **Why does `ToolCall` connect `Message` to `chat.rs`?**
-  _High betweenness centrality (0.141) - this node is a cross-community bridge._
+  _High betweenness centrality (0.147) - this node is a cross-community bridge._
+- **Why does `Provider` connect `Provider` to `openai.rs`, `delegate.rs`, `Registry`?**
+  _High betweenness centrality (0.133) - this node is a cross-community bridge._
 - **What connects `zakhar`, `Setup`, `Usage` to the rest of the system?**
   _4 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `openai.rs` be split into smaller, more focused modules?**

@@ -1,11 +1,25 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 
 use serde_json::{json, Value};
 
 use crate::types::{Function, Tool};
 
 type Executor = Box<dyn Fn(&Value) -> anyhow::Result<String> + Send + Sync>;
+
+static TODOS: OnceLock<Mutex<Vec<Todo>>> = OnceLock::new();
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct Todo {
+    content: String,
+    status: String,
+    priority: String,
+}
+
+pub const READONLY_TOOLS: &[&str] = &[
+    "read", "glob", "grep", "ask_user", "todowrite", "skill", "delegate", "handoff",
+];
 
 pub struct Invoke {
     tools: HashMap<String, ToolDef>,
@@ -25,6 +39,9 @@ impl Invoke {
         register_edit(&mut tools);
         register_glob(&mut tools);
         register_grep(&mut tools);
+        register_ask_user(&mut tools);
+        register_todowrite(&mut tools);
+        register_skill(&mut tools);
         Self { tools }
     }
 
@@ -333,6 +350,250 @@ fn register_grep(tools: &mut HashMap<String, ToolDef>) {
                             }
                         },
                         "required": ["pattern"]
+                    }),
+                },
+            },
+            executor,
+        },
+    );
+}
+
+fn register_ask_user(tools: &mut HashMap<String, ToolDef>) {
+    let executor: Executor = Box::new(|args| {
+        let questions = args
+            .get("questions")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| anyhow::anyhow!("missing questions"))?;
+        if questions.is_empty() {
+            anyhow::bail!("questions is empty");
+        }
+        let mut answers = Vec::new();
+        for q in questions {
+            let header = q.get("header").and_then(|v| v.as_str()).unwrap_or("Question");
+            let question = q.get("question").and_then(|v| v.as_str()).unwrap_or("");
+            let options = q.get("options").and_then(|v| v.as_array());
+            println!("\n[ask_user] {}: {}", header, question);
+            if let Some(opts) = options {
+                for (i, opt) in opts.iter().enumerate() {
+                    let label = opt.get("label").and_then(|v| v.as_str()).unwrap_or("");
+                    let desc = opt.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                    println!("  {}. {} - {}", i + 1, label, desc);
+                }
+                print!("[ask_user] Enter choice(s) (number or label, comma for multiple): ");
+            } else {
+                print!("[ask_user] Your answer: ");
+            }
+            std::io::Write::flush(&mut std::io::stdout()).ok();
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            let input = input.trim().to_string();
+            let answer = if let Some(opts) = options {
+                // map numbers to labels
+                let mut chosen = Vec::new();
+                for part in input.split(',').map(|s| s.trim()) {
+                    if let Ok(n) = part.parse::<usize>()
+                        && n > 0 && n <= opts.len()
+                            && let Some(l) = opts[n - 1].get("label").and_then(|v| v.as_str()) {
+                                chosen.push(l.to_string());
+                                continue;
+                            }
+                    if !part.is_empty() {
+                        chosen.push(part.to_string());
+                    }
+                }
+                if chosen.is_empty() { input.clone() } else { chosen.join(", ") }
+            } else {
+                input.clone()
+            };
+            answers.push(json!({"header": header, "question": question, "answer": answer}));
+            println!("[ask_user] → answered: {}", answers.last().unwrap()["answer"].as_str().unwrap_or(""));
+        }
+        Ok(serde_json::to_string_pretty(&answers).unwrap_or_else(|_| format!("{:?}", answers)))
+    });
+    tools.insert(
+        "ask_user".to_string(),
+        ToolDef {
+            tool: Tool {
+                tool_type: "function".to_string(),
+                function: Function {
+                    name: "ask_user".to_string(),
+                    description: "Ask the user clarifying questions with options. Use when requirements are ambiguous or you need a decision. Returns user's answers as JSON.".to_string(),
+                    parameters: json!({
+                        "type": "object",
+                        "properties": {
+                            "questions": {
+                                "type": "array",
+                                "description": "Questions to ask, each with header, question, options",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "header": { "type": "string", "description": "Short label (max 30 chars)" },
+                                        "question": { "type": "string", "description": "Complete question" },
+                                        "options": {
+                                            "type": "array",
+                                            "description": "Available choices",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "label": { "type": "string" },
+                                                    "description": { "type": "string" }
+                                                },
+                                                "required": ["label", "description"]
+                                            }
+                                        }
+                                    },
+                                    "required": ["header", "question", "options"]
+                                }
+                            }
+                        },
+                        "required": ["questions"]
+                    }),
+                },
+            },
+            executor,
+        },
+    );
+}
+
+fn register_todowrite(tools: &mut HashMap<String, ToolDef>) {
+    let executor: Executor = Box::new(|args| {
+        let todos = args
+            .get("todos")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| anyhow::anyhow!("missing todos"))?;
+        let mut list = Vec::new();
+        for t in todos {
+            let content = t.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let status = t.get("status").and_then(|v| v.as_str()).unwrap_or("pending").to_string();
+            let priority = t.get("priority").and_then(|v| v.as_str()).unwrap_or("medium").to_string();
+            if !["pending", "in_progress", "completed", "cancelled"].contains(&status.as_str()) {
+                anyhow::bail!("invalid status {status}");
+            }
+            list.push(Todo { content, status, priority });
+        }
+        let in_progress = list.iter().filter(|t| t.status == "in_progress").count();
+        if in_progress > 1 {
+            anyhow::bail!("only one task may be in_progress at a time, got {in_progress}");
+        }
+        let mutex = TODOS.get_or_init(|| Mutex::new(Vec::new()));
+        *mutex.lock().unwrap() = list.clone();
+        let mut out = String::new();
+        out.push_str(&format!("[todowrite] {} todos:\n", list.len()));
+        for t in &list {
+            let icon = match t.status.as_str() {
+                "pending" => "○",
+                "in_progress" => "●",
+                "completed" => "✓",
+                "cancelled" => "✗",
+                _ => "?",
+            };
+            out.push_str(&format!("  {} [{}] {} ({})\n", icon, t.status, t.content, t.priority));
+        }
+        println!("{out}");
+        std::io::Write::flush(&mut std::io::stdout()).ok();
+        Ok(out)
+    });
+    tools.insert(
+        "todowrite".to_string(),
+        ToolDef {
+            tool: Tool {
+                tool_type: "function".to_string(),
+                function: Function {
+                    name: "todowrite".to_string(),
+                    description: "Create and maintain a task list. Use for multi-step work: one in_progress at a time, mark completed as you go. Call at start and on progress.".to_string(),
+                    parameters: json!({
+                        "type": "object",
+                        "properties": {
+                            "todos": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "content": { "type": "string" },
+                                        "priority": { "type": "string", "enum": ["high", "medium", "low"] },
+                                        "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "cancelled"] }
+                                    },
+                                    "required": ["content", "status", "priority"]
+                                }
+                            }
+                        },
+                        "required": ["todos"]
+                    }),
+                },
+            },
+            executor,
+        },
+    );
+}
+
+fn register_skill(tools: &mut HashMap<String, ToolDef>) {
+    let executor: Executor = Box::new(|args| {
+        let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        if name.is_empty() {
+            // list available
+            let mut skills = Vec::new();
+            for dir in [".opencode/skills", ".claude/skills", "skills", ".zakhar/skills"] {
+                if let Ok(entries) = std::fs::read_dir(dir) {
+                    for e in entries.flatten() {
+                        if let Ok(ft) = e.file_type()
+                            && ft.is_dir()
+                                && let Some(n) = e.file_name().to_str() {
+                                    skills.push(format!("{n} ({dir}/{n})"));
+                                }
+                    }
+                }
+            }
+            if let Some(home) = dirs::config_dir() {
+                let p = home.join("zakhar/skills");
+                if let Ok(entries) = std::fs::read_dir(p) {
+                    for e in entries.flatten() {
+                        if let Ok(ft) = e.file_type()
+                            && ft.is_dir()
+                                && let Some(n) = e.file_name().to_str() {
+                                    skills.push(format!("{n} (config)"));
+                                }
+                    }
+                }
+            }
+            if skills.is_empty() {
+                return Ok("no skills found. Create .opencode/skills/<name>/SKILL.md".to_string());
+            }
+            return Ok(format!("available skills:\n{}", skills.join("\n")));
+        }
+        let candidates = [
+            format!(".opencode/skills/{}/SKILL.md", name),
+            format!(".claude/skills/{}/SKILL.md", name),
+            format!("skills/{}/SKILL.md", name),
+            format!(".zakhar/skills/{}/SKILL.md", name),
+        ];
+        let mut home_candidates = Vec::new();
+        if let Some(home) = dirs::config_dir() {
+            home_candidates.push(home.join(format!("zakhar/skills/{}/SKILL.md", name)));
+            home_candidates.push(home.join(format!("opencode/skills/{}/SKILL.md", name)));
+        }
+        for p in candidates.iter().map(Path::new).chain(home_candidates.iter().map(|p| p.as_path())) {
+            if p.exists() {
+                let content = std::fs::read_to_string(p)?;
+                println!("[skill] loaded {name} from {}", p.display());
+                return Ok(content);
+            }
+        }
+        anyhow::bail!("skill '{name}' not found. Tried: {:?} {:?}", candidates, home_candidates)
+    });
+    tools.insert(
+        "skill".to_string(),
+        ToolDef {
+            tool: Tool {
+                tool_type: "function".to_string(),
+                function: Function {
+                    name: "skill".to_string(),
+                    description: "Load a skill's instructions (e.g., plan, agent-creator). Call when task matches a skill. With no name, lists available skills.".to_string(),
+                    parameters: json!({
+                        "type": "object",
+                        "properties": {
+                            "name": { "type": "string", "description": "Skill name from available_skills" }
+                        },
+                        "required": []
                     }),
                 },
             },

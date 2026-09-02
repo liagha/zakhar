@@ -105,6 +105,7 @@ pub async fn run(
     agent_name: &str,
     task: &str,
     depth: usize,
+    plan: bool,
 ) -> String {
     if depth >= MAX_DEPTH {
         return format!("error: max delegation depth ({MAX_DEPTH}) reached at agent '{agent_name}'");
@@ -134,6 +135,15 @@ pub async fn run(
     std::io::Write::flush(&mut std::io::stdout()).ok();
 
     let mut runner = Runner::new(provider, model.clone(), Some(agent_cfg));
+    if let Some(mem) = crate::memory::load() {
+        runner.push(Message::system(format!("Project memory:\n{mem}")));
+    }
+    if plan {
+        runner.push(Message::system(
+            "PLAN MODE: read-only. Do not use write/edit/bash to modify files. Use todowrite to plan, ask_user to clarify, and delegate/handoff to specialists."
+                .to_string(),
+        ));
+    }
     let invoke = Invoke::new();
     let allowed = agent_cfg.tools.as_slice();
     let mut tools = if allowed.is_empty() {
@@ -150,6 +160,10 @@ pub async fn run(
         if handoff_allowed {
             tools.push(handoff_tool_def(cfg));
         }
+    }
+    if plan {
+        tools.retain(|t| crate::invoke::READONLY_TOOLS.contains(&t.function.name.as_str()));
+        println!("{prefix} plan mode: tools filtered to {} readonly", tools.len());
     }
     runner.set_tools(tools);
     runner.push(Message::user(task.to_string()));
@@ -314,10 +328,11 @@ pub async fn run(
                     let cfg_clone = cfg.clone();
                     let prov_copy: &dyn Provider = provider;
                     let depth_next = depth + 1;
+                    let plan_copy = plan;
                     let id_clone = tc.id.clone();
                     delegate_ids.push(id_clone);
                     delegate_futures.push(Box::pin(async move {
-                        run(prov_copy, &cfg_clone, &sub_agent, &sub_task, depth_next).await
+                        run(prov_copy, &cfg_clone, &sub_agent, &sub_task, depth_next, plan_copy).await
                     }));
                 }
             } else {
