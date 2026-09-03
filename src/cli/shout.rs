@@ -49,7 +49,7 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
     runner.set_tools(tools);
 
     runner.push(crate::types::Message::user(phrase));
-    ui.status("حالا بذار ببینم …");
+    ui.status("…");
 
     let mut session = Session::new();
     let text = run_tool_loop(&mut ui, &mut runner, &cfg, &inv, p, &mut session).await?;
