@@ -24,6 +24,7 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("unknown provider: {provider_id}"))?;
 
     let model = p.list_models().first().cloned().unwrap_or_default();
+    crate::invoke::seed_model_list(p.list_models());
 
     let inv = Invoke::new();
     let mut runner = Runner::new(p, model, None);
@@ -31,8 +32,11 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
     runner.push(crate::types::Message::system(
         "You are zakhar, a mate who does quick file/terminal chores from a single short phrase. \
          Short, dry, direct. Do exactly what the phrase asks. Read-only tools run freely. \
-         For any mutating tool (write/edit/bash/delete), it WILL be confirmed by the user, so \
-         just proceed to request it. Finish with a one-line mate-style summary of what you did."
+         Mutating tools (write/edit/bash/delete) are confirmed by default, but if the user's \
+         phrase grants permission (e.g. 'you have my permission', 'go ahead', 'don't ask'), call \
+         grant_permission first and then run mutating tools freely. To list models call \
+         list_models. To start an interactive chat call open_chat. Finish with a one-line \
+         mate-style summary of what you did."
             .to_string(),
     ));
 
@@ -53,6 +57,12 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
 
     let mut session = Session::new();
     let text = run_tool_loop(&mut ui, &mut runner, &cfg, &inv, p, &mut session).await?;
+
+    if let Some(seed) = crate::invoke::take_oneshot_chat() {
+        super::chat(None, None, None, true, false, false, false, seed).await?;
+        return Ok(());
+    }
+
     ui.ok(&text);
     Ok(())
 }
@@ -132,7 +142,7 @@ async fn run_tool_loop(
         let mut delegate_kinds: Vec<String> = Vec::new();
 
         for tc in &tool_calls {
-            let approved = if !is_mutating(&tc.name) {
+            let approved = if !is_mutating(&tc.name) || crate::invoke::allow_mutations() {
                 true
             } else {
                 ui.status(format!("confirm {}? [y/n]", tc.name).as_str());

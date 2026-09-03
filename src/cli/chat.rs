@@ -13,6 +13,7 @@ use crate::slash;
 use crate::types::ToolCall;
 use crate::ui::Ui;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn chat(
     provider: Option<String>,
     model: Option<String>,
@@ -21,6 +22,7 @@ pub async fn chat(
     auto_approve: bool,
     plan_mode: bool,
     simple: bool,
+    seed: String,
 ) -> anyhow::Result<()> {
     let cfg = Config::load()?;
     let registry = registry::build(&cfg);
@@ -98,15 +100,24 @@ pub async fn chat(
     }
 
     let mut allow_all = false;
+    let mut pending: Vec<String> = if seed.trim().is_empty() {
+        Vec::new()
+    } else {
+        vec![seed.trim().to_string()]
+    };
     let mut line = String::new();
     loop {
         ui.prompt();
-        line.clear();
-        let read = std::io::stdin().read_line(&mut line)?;
-        if read == 0 {
-            break;
-        }
-        let text = line.trim().to_string();
+        let text = if !pending.is_empty() {
+            pending.remove(0)
+        } else {
+            line.clear();
+            let read = std::io::stdin().read_line(&mut line)?;
+            if read == 0 {
+                break;
+            }
+            line.trim().to_string()
+        };
         if text.is_empty() {
             continue;
         }

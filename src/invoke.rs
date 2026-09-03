@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use serde_json::{json, Value};
@@ -10,6 +11,23 @@ type Executor = Box<dyn Fn(&Value) -> anyhow::Result<String> + Send + Sync>;
 
 static TODOS: OnceLock<Mutex<Vec<Todo>>> = OnceLock::new();
 static BG_TASKS: OnceLock<Mutex<HashMap<String, BgTask>>> = OnceLock::new();
+static ALLOW_MUTATIONS: AtomicBool = AtomicBool::new(false);
+static ONESHOT_CHAT: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+static MODEL_LIST: OnceLock<Vec<String>> = OnceLock::new();
+
+pub fn seed_model_list(models: Vec<String>) {
+    let _ = MODEL_LIST.set(models);
+}
+
+pub fn allow_mutations() -> bool {
+    ALLOW_MUTATIONS.load(Ordering::SeqCst)
+}
+
+pub fn take_oneshot_chat() -> Option<String> {
+    let cell = ONESHOT_CHAT.get_or_init(|| Mutex::new(None));
+    let mut guard = cell.lock().unwrap();
+    guard.take()
+}
 
 struct BgTask {
     #[allow(dead_code)]
@@ -26,7 +44,7 @@ struct Todo {
 }
 
 pub const READONLY_TOOLS: &[&str] = &[
-    "read", "glob", "grep", "ask_user", "todowrite", "skill", "task_output", "task_list", "slash", "delegate", "handoff",
+    "read", "glob", "grep", "ask_user", "todowrite", "skill", "task_output", "task_list", "slash", "delegate", "handoff", "open_chat", "list_models", "grant_permission",
 ];
 
 pub struct Invoke {
@@ -52,6 +70,9 @@ impl Invoke {
         register_skill(&mut tools);
         register_task_output(&mut tools);
         register_task_list(&mut tools);
+        register_open_chat(&mut tools);
+        register_list_models(&mut tools);
+        register_grant_permission(&mut tools);
         Self { tools }
     }
 
@@ -723,6 +744,88 @@ fn register_skill(tools: &mut HashMap<String, ToolDef>) {
                         "properties": {
                             "name": { "type": "string", "description": "Skill name from available_skills" }
                         },
+                        "required": []
+                    }),
+                },
+            },
+            executor,
+        },
+    );
+}
+
+fn register_open_chat(tools: &mut HashMap<String, ToolDef>) {
+    let executor: Executor = Box::new(|args| {
+        let message = args.get("message").and_then(|v| v.as_str()).unwrap_or("");
+        let cell = ONESHOT_CHAT.get_or_init(|| Mutex::new(None));
+        *cell.lock().unwrap() = Some(message.to_string());
+        Ok("opening interactive chat".to_string())
+    });
+    tools.insert(
+        "open_chat".to_string(),
+        ToolDef {
+            tool: Tool {
+                tool_type: "function".to_string(),
+                function: Function {
+                    name: "open_chat".to_string(),
+                    description: "Open the interactive chat session with the given message as the first user message. Call when the user wants to talk interactively (e.g. 'open chat', 'let's chat').".to_string(),
+                    parameters: json!({
+                        "type": "object",
+                        "properties": {
+                            "message": { "type": "string", "description": "Initial message to start the chat with" }
+                        },
+                        "required": ["message"]
+                    }),
+                },
+            },
+            executor,
+        },
+    );
+}
+
+fn register_list_models(tools: &mut HashMap<String, ToolDef>) {
+    let executor: Executor = Box::new(|_args| {
+        let models = MODEL_LIST.get();
+        match models {
+            Some(m) if !m.is_empty() => Ok(format!("available models:\n{}", m.join("\n"))),
+            _ => Ok("no models available".to_string()),
+        }
+    });
+    tools.insert(
+        "list_models".to_string(),
+        ToolDef {
+            tool: Tool {
+                tool_type: "function".to_string(),
+                function: Function {
+                    name: "list_models".to_string(),
+                    description: "List the available AI models and providers. Call when the user wants to see models or providers (e.g. 'show models', 'what models do you have').".to_string(),
+                    parameters: json!({
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }),
+                },
+            },
+            executor,
+        },
+    );
+}
+
+fn register_grant_permission(tools: &mut HashMap<String, ToolDef>) {
+    let executor: Executor = Box::new(|_args| {
+        ALLOW_MUTATIONS.store(true, Ordering::SeqCst);
+        Ok("permission granted: will not ask before mutating tools".to_string())
+    });
+    tools.insert(
+        "grant_permission".to_string(),
+        ToolDef {
+            tool: Tool {
+                tool_type: "function".to_string(),
+                function: Function {
+                    name: "grant_permission".to_string(),
+                    description: "Grant full permission for this run so no further confirmation is asked before mutating tools. Call when the user explicitly says they give permission, e.g. 'you have my permission', 'go ahead', 'don't ask', 'do whatever is needed'.".to_string(),
+                    parameters: json!({
+                        "type": "object",
+                        "properties": {},
                         "required": []
                     }),
                 },

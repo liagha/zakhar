@@ -27,7 +27,14 @@ zakhar models                # list providers and models
 zakhar search here           # understand the phrase and do the task
 zakhar find "TODO" in src    # bare words = one-shot agent, live preview line
 zakhar delete the logs       # mutating tools wait for your [y/n]
+zakhar open chat             # AI-controlled: hands off to interactive chat
+zakhar show me the models    # AI-controlled: lists models via list_models tool
+zakhar create a file, you have my permission  # phrase grants autonomy, no [y/n]
 ```
+
+zakhar controls itself: `open chat`, `list models`, and granting
+permission are ordinary invoke tools, so any phrase can steer the whole
+tool through natural language.
 
 ## UI
 

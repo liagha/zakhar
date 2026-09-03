@@ -66,7 +66,10 @@ async fn main() -> anyhow::Result<()> {
             auto,
             plan,
             simple,
-        }), _) => cli::chat(provider, model, agent, invoke, auto, plan, simple).await?,
+        }), _) => {
+            cli::chat(provider, model, agent, invoke, auto, plan, simple, String::new())
+                .await?
+        }
         (Some(Command::Models { provider }), _) => cli::models(provider).await?,
         (None, words) if !words.is_empty() => {
             cli::shout(words.join(" ")).await?;
