@@ -143,7 +143,7 @@ pub async fn run(
     }
     if plan {
         runner.push(Message::system(
-            "PLAN MODE: read-only. Do not use write/edit/bash to modify files. Use todowrite to plan, ask_user to clarify, and delegate/handoff to specialists."
+            "PLAN MODE: read-only. Do not use write/edit/bash to modify files. Use todo to plan, ask to clarify, and delegate/handoff to specialists."
                 .to_string(),
         ));
     }
@@ -169,7 +169,7 @@ pub async fn run(
         tools.push(slash::tool_def());
     }
     if plan {
-        tools.retain(|t| crate::invoke::READONLY_TOOLS.contains(&t.function.name.as_str()));
+        tools.retain(|t| crate::invoke::READONLY.contains(&t.function.name.as_str()));
         println!("{prefix} plan mode: tools filtered to {} readonly", tools.len());
     }
     runner.set_tools(tools);

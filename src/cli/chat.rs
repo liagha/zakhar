@@ -54,9 +54,15 @@ pub async fn chat(
     if let Some(mem) = crate::memory::load() {
         runner.push(crate::types::Message::system(format!("Project memory:\n{mem}")));
     }
+    let ctx = crate::tools::context_index();
+    if ctx != "no saved context" {
+        runner.push(crate::types::Message::system(format!(
+            "Saved context (fetch values with the context tool as needed):\n{ctx}"
+        )));
+    }
     if plan_mode {
         runner.push(crate::types::Message::system(
-            "PLAN MODE: read-only. Do not use write/edit/bash to modify files. Use todowrite to plan, ask_user to clarify, and delegate/handoff to specialists. When plan is complete, summarize without making edits.".to_string(),
+            "PLAN MODE: read-only. Do not use write/edit/bash to modify files. Use todo to plan, ask to clarify, and delegate/handoff to specialists. When plan is complete, summarize without making edits.".to_string(),
         ));
         ui.note("⚑ plan mode: read-only");
     }
@@ -83,7 +89,7 @@ pub async fn chat(
             tools.push(slash::tool_def());
         }
         if plan_mode {
-            tools.retain(|t| crate::invoke::READONLY_TOOLS.contains(&t.function.name.as_str()));
+            tools.retain(|t| crate::invoke::READONLY.contains(&t.function.name.as_str()));
             ui.note(format!("plan mode: tools filtered to {} readonly", tools.len()).as_str());
         }
         runner.set_tools(tools);
@@ -340,9 +346,9 @@ pub async fn chat(
                     );
                     hooks::run_post(&tc.name, &tc.arguments, &out);
                     outputs.insert(tc.id.clone(), out);
-                } else if tc.name == "ask_user" {
+                } else if tc.name == "ask" {
                     ui.end();
-                    let out = inv.exec("ask_user", &tc.arguments);
+                    let out = inv.exec("ask", &tc.arguments);
                     let preview: String = out.chars().take(500).collect();
                     if out.len() > 500 {
                         ui.note(format!("✓ {}({} bytes): {} …", tc.name, out.len(), preview).as_str());

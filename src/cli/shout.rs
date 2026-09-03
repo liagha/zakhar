@@ -24,19 +24,19 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("unknown provider: {provider_id}"))?;
 
     let model = p.list_models().first().cloned().unwrap_or_default();
-    crate::invoke::seed_model_list(p.list_models());
+    crate::invoke::seed_models(p.list_models());
 
     let inv = Invoke::new();
     let mut runner = Runner::new(p, model, None);
 
     runner.push(crate::types::Message::system(
-        "You are zakhar, a mate who does quick file/terminal chores from a single short phrase. \
-         Short, dry, direct. Do exactly what the phrase asks. Read-only tools run freely. \
-         Mutating tools (write/edit/bash/delete) are confirmed by default, but if the user's \
-         phrase grants permission (e.g. 'you have my permission', 'go ahead', 'don't ask'), call \
-         grant_permission first and then run mutating tools freely. To list models call \
-         list_models. To start an interactive chat call open_chat. Finish with a one-line \
-         mate-style summary of what you did."
+         "You are zakhar, a mate who does quick file/terminal chores from a single short phrase. \
+          Short, dry, direct. Do exactly what the phrase asks. Read-only tools run freely. \
+          Mutating tools (write/edit/bash) are confirmed by default, but if the user's \
+          phrase grants permission (e.g. 'you have my permission', 'go ahead', 'don't ask'), call \
+          control with action=allow first and then run mutating tools freely. To list models call \
+          control with action=models. To start an interactive chat call control with action=chat. \
+          Finish with a one-line mate-style summary of what you did."
             .to_string(),
     ));
 
@@ -46,11 +46,22 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
         )));
     }
 
+    let ctx = crate::tools::context_index();
+    if ctx != "no saved context" {
+        runner.push(crate::types::Message::system(format!(
+            "Saved context (fetch values with the context tool as needed):\n{ctx}"
+        )));
+    }
+
     let mut tools = inv.definitions();
     tools.push(delegate::tool_def(&cfg));
     tools.push(delegate::handoff_tool_def(&cfg));
     tools.push(slash::tool_def());
     runner.set_tools(tools);
+
+    if phrase_grants_permission(&phrase) {
+        crate::invoke::grant();
+    }
 
     runner.push(crate::types::Message::user(phrase));
     ui.status("…");
@@ -58,7 +69,7 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
     let mut session = Session::new();
     let text = run_tool_loop(&mut ui, &mut runner, &cfg, &inv, p, &mut session).await?;
 
-    if let Some(seed) = crate::invoke::take_oneshot_chat() {
+    if let Some(seed) = crate::invoke::chat_message() {
         super::chat(None, None, None, true, false, false, false, seed).await?;
         return Ok(());
     }
@@ -142,7 +153,7 @@ async fn run_tool_loop(
         let mut delegate_kinds: Vec<String> = Vec::new();
 
         for tc in &tool_calls {
-            let approved = if !is_mutating(&tc.name) || crate::invoke::allow_mutations() {
+            let approved = if !is_mutating(&tc.name) || crate::invoke::permitted() {
                 true
             } else {
                 ui.status(format!("confirm {}? [y/n]", tc.name).as_str());
@@ -213,9 +224,9 @@ async fn run_tool_loop(
                 let out = slash::handle_ai(cmd, args, session, runner);
                 hooks::run_post(&tc.name, &tc.arguments, &out);
                 outputs.insert(tc.id.clone(), out);
-            } else if tc.name == "ask_user" {
+            } else if tc.name == "ask" {
                 ui.end();
-                let out = inv.exec("ask_user", &tc.arguments);
+                let out = inv.exec("ask", &tc.arguments);
                 hooks::run_post(&tc.name, &tc.arguments, &out);
                 outputs.insert(tc.id.clone(), out);
             } else {
@@ -247,7 +258,22 @@ async fn run_tool_loop(
 }
 
 fn is_mutating(name: &str) -> bool {
-    !crate::invoke::READONLY_TOOLS.contains(&name)
+    !crate::invoke::READONLY.contains(&name)
+}
+
+fn phrase_grants_permission(phrase: &str) -> bool {
+    let p = phrase.to_lowercase();
+    [
+        "you have my permission",
+        "go ahead",
+        "don't ask",
+        "no confirmation",
+        "do it freely",
+        "permission granted",
+        "i authorize",
+    ]
+    .iter()
+    .any(|marker| p.contains(marker))
 }
 
 fn preview(s: &str) -> String {

@@ -2,6 +2,7 @@ mod agent;
 mod cli;
 mod config;
 mod delegate;
+mod handler;
 mod hooks;
 mod invoke;
 mod memory;
@@ -9,6 +10,7 @@ mod provider;
 mod registry;
 mod session;
 mod slash;
+mod tools;
 mod types;
 mod ui;
 
