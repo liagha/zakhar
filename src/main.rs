@@ -1,18 +1,4 @@
-mod agent;
-mod cli;
-mod config;
-mod delegate;
-mod handler;
-mod hooks;
-mod invoke;
-mod memory;
-mod provider;
-mod registry;
-mod session;
-mod slash;
-mod tools;
-mod types;
-mod ui;
+use zakhar::cli::{chat, models, shout};
 
 use clap::{CommandFactory, Parser, Subcommand};
 
@@ -69,12 +55,12 @@ async fn main() -> anyhow::Result<()> {
             plan,
             simple,
         }), _) => {
-            cli::chat(provider, model, agent, invoke, auto, plan, simple, String::new())
+            chat(provider, model, agent, invoke, auto, plan, simple, String::new())
                 .await?
         }
-        (Some(Command::Models { provider }), _) => cli::models(provider).await?,
+        (Some(Command::Models { provider }), _) => models(provider).await?,
         (None, words) if !words.is_empty() => {
-            cli::shout(words.join(" ")).await?;
+            shout(words.join(" ")).await?;
         }
         (None, _) => {
             let _ = Cli::command().print_help();

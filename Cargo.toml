@@ -5,6 +5,15 @@ edition = "2024"
 description = "Multi-agent CLI tool for working with AI coding models"
 license = "MIT"
 
+# Both a library (embeddable core) and a CLI binary are built from src/.
+[lib]
+name = "zakhar"
+path = "src/lib.rs"
+
+[[bin]]
+name = "zakhar"
+path = "src/main.rs"
+
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 clap = { version = "4", features = ["derive", "env"] }
