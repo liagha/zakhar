@@ -10,6 +10,7 @@ mod registry;
 mod session;
 mod slash;
 mod types;
+mod ui;
 
 use clap::Parser;
 
@@ -35,13 +36,11 @@ enum Command {
         auto: bool,
         #[arg(long)]
         plan: bool,
+        #[arg(long)]
+        simple: bool,
     },
     Models {
         provider: Option<String>,
-    },
-    Serve {
-        #[arg(long, short, default_value = "8787")]
-        port: u16,
     },
 }
 
@@ -62,9 +61,9 @@ async fn main() -> anyhow::Result<()> {
             invoke,
             auto,
             plan,
-        } => cli::chat(provider, model, agent, invoke, auto, plan).await?,
+            simple,
+        } => cli::chat(provider, model, agent, invoke, auto, plan, simple).await?,
         Command::Models { provider } => cli::models(provider).await?,
-        Command::Serve { port } => cli::serve(port).await?,
     }
     Ok(())
 }

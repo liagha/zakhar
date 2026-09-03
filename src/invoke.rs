@@ -12,6 +12,7 @@ static TODOS: OnceLock<Mutex<Vec<Todo>>> = OnceLock::new();
 static BG_TASKS: OnceLock<Mutex<HashMap<String, BgTask>>> = OnceLock::new();
 
 struct BgTask {
+    #[allow(dead_code)]
     id: String,
     command: String,
     file: String,

@@ -1,7 +1,5 @@
 use std::collections::HashMap;
-use std::io::Write;
 
-use colored::Colorize;
 use futures::StreamExt;
 
 use crate::agent::Runner;
@@ -13,6 +11,7 @@ use crate::registry;
 use crate::session::Session;
 use crate::slash;
 use crate::types::ToolCall;
+use crate::ui::Ui;
 
 pub async fn chat(
     provider: Option<String>,
@@ -21,9 +20,11 @@ pub async fn chat(
     invoke_flag: bool,
     auto_approve: bool,
     plan_mode: bool,
+    simple: bool,
 ) -> anyhow::Result<()> {
     let cfg = Config::load()?;
     let registry = registry::build(&cfg);
+    let mut ui = Ui::new(simple);
 
     let provider_id = provider.unwrap_or_else(|| registry::default_provider(&cfg));
     let p = registry
@@ -55,7 +56,7 @@ pub async fn chat(
         runner.push(crate::types::Message::system(
             "PLAN MODE: read-only. Do not use write/edit/bash to modify files. Use todowrite to plan, ask_user to clarify, and delegate/handoff to specialists. When plan is complete, summarize without making edits.".to_string(),
         ));
-        println!("[zakhar] ⚑ plan mode: read-only");
+        ui.note("⚑ plan mode: read-only");
     }
 
     if let Some(inv) = &invoke {
@@ -81,7 +82,7 @@ pub async fn chat(
         }
         if plan_mode {
             tools.retain(|t| crate::invoke::READONLY_TOOLS.contains(&t.function.name.as_str()));
-            println!("[zakhar] plan mode: tools filtered to {} readonly", tools.len());
+            ui.note(format!("plan mode: tools filtered to {} readonly", tools.len()).as_str());
         }
         runner.set_tools(tools);
     }
@@ -91,16 +92,15 @@ pub async fn chat(
     }
 
     if plan_mode {
-        println!("zakhar [{provider_id}/{model}] plan ⚑  ctrl+d to exit");
+        ui.note(format!("zakhar [{provider_id}/{model}] plan ⚑  ctrl+d to exit").as_str());
     } else {
-        println!("zakhar [{provider_id}/{model}]  ctrl+d to exit");
+        ui.note(format!("zakhar [{provider_id}/{model}]  ctrl+d to exit").as_str());
     }
 
     let mut allow_all = false;
     let mut line = String::new();
     loop {
-        print!("> ");
-        std::io::stdout().flush()?;
+        ui.prompt();
         line.clear();
         let read = std::io::stdin().read_line(&mut line)?;
         if read == 0 {
@@ -111,8 +111,7 @@ pub async fn chat(
             continue;
         }
         if let Some(out) = slash::handle_user(&text, &mut session, &mut runner) {
-            println!("{out}");
-            std::io::stdout().flush().ok();
+            ui.note(out.as_str());
             continue;
         }
 
@@ -121,23 +120,17 @@ pub async fn chat(
         session.messages.push(user_msg);
 
         loop {
-            println!("[zakhar] → sending request …");
-            std::io::stdout().flush().ok();
+            ui.status("…");
             let mut stream = match runner.stream().await {
-                Ok(s) => {
-                    println!("[zakhar] … awaiting stream events …");
-                    std::io::stdout().flush().ok();
-                    s
-                }
+                Ok(s) => s,
                 Err(e) => {
-                    println!("[zakhar] ✗ failed to start stream: {e}");
-                    std::io::stdout().flush().ok();
+                    ui.err(format!("failed to start stream: {e}").as_str());
                     return Err(e);
                 }
             };
             let mut full = String::new();
-            let mut had_reasoning = false;
             let mut saw_reasoning = false;
+            let mut had_reasoning = false;
             let mut tool_parts: HashMap<usize, ToolCallPartAccum> = HashMap::new();
             let mut events_seen = 0usize;
 
@@ -145,41 +138,25 @@ pub async fn chat(
                 let event = match event {
                     Ok(ev) => ev,
                     Err(e) => {
-                        println!("\n[zakhar] ✗ stream error: {e}");
-                        std::io::stdout().flush().ok();
+                        ui.err(format!("stream error: {e}").as_str());
                         return Err(e);
                     }
                 };
                 match event {
                     crate::provider::ChatStreamEvent::Reasoning(t) => {
-                        if events_seen == 0 {
-                            println!("[zakhar] … receiving (reasoning) …");
-                            std::io::stdout().flush().ok();
-                        }
                         events_seen += 1;
                         saw_reasoning = true;
-                        print!("{}", t.dimmed().italic());
-                        std::io::stdout().flush()?;
+                        ui.reasoning(&t);
                     }
                     crate::provider::ChatStreamEvent::Text(t) => {
-                        if events_seen == 0 {
-                            println!("[zakhar] … receiving (content) …");
-                            std::io::stdout().flush().ok();
-                        }
                         events_seen += 1;
                         if saw_reasoning && !had_reasoning {
                             had_reasoning = true;
-                            println!();
                         }
-                        print!("{t}");
-                        std::io::stdout().flush()?;
                         full.push_str(&t);
+                        ui.text(&t);
                     }
                     crate::provider::ChatStreamEvent::ToolCall(part) => {
-                        if events_seen == 0 {
-                            println!("[zakhar] … receiving (tool_call) …");
-                            std::io::stdout().flush().ok();
-                        }
                         events_seen += 1;
                         let entry = tool_parts.entry(part.index).or_default();
                         if let Some(id) = part.id {
@@ -196,11 +173,8 @@ pub async fn chat(
                 }
             }
             if events_seen == 0 {
-                println!("[zakhar] … stream ended with no content");
-            } else {
-                println!("\n[zakhar] ✓ stream done ({} events, {} chars)", events_seen, full.len());
+                ui.note("stream ended with no content");
             }
-            std::io::stdout().flush().ok();
 
             let tool_calls: Vec<ToolCall> = tool_parts
                 .into_iter()
@@ -227,6 +201,7 @@ pub async fn chat(
                 session
                     .messages
                     .push(crate::types::Message::assistant(full, None));
+                ui.end();
                 break;
             }
 
@@ -240,17 +215,20 @@ pub async fn chat(
             ));
 
             if !tool_calls.is_empty() {
-                println!(
-                    "[zakhar] → {} tool call(s): {}",
-                    tool_calls.len(),
-                    tool_calls
-                        .iter()
-                        .map(|tc| format!("{}({})", tc.name, compact_args(&tc.arguments)))
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                ui.note(
+                    format!(
+                        "→ {}: {}",
+                        tool_calls.len(),
+                        tool_calls
+                            .iter()
+                            .map(|tc| format!("{}({})", tc.name, compact_args(&tc.arguments)))
+                            .collect::<Vec<_>>()
+                            .join(" · ")
+                    )
+                    .as_str(),
                 );
-                std::io::stdout().flush().ok();
             }
+            ui.end();
 
             let inv = invoke.as_ref().unwrap();
             let mut denied = false;
@@ -262,47 +240,23 @@ pub async fn chat(
 
             for tc in &tool_calls {
                 let approved = if allow_all || auto_approve {
-                    if auto_approve {
-                        println!("[zakhar] ✓ auto-approved invoke:{}({})", tc.name, compact_args(&tc.arguments));
-                    } else {
-                        println!("[zakhar] ✓ pre-approved (a) invoke:{}({})", tc.name, compact_args(&tc.arguments));
-                    }
-                    std::io::stdout().flush().ok();
                     true
                 } else {
-                    print!(
-                        "{} {}({})? [y/n/a(all)] ",
-                        "invoke:".yellow(),
-                        tc.name.cyan(),
-                        compact_args(&tc.arguments)
-                    );
-                    std::io::stdout().flush()?;
+                    ui.note(format!("invoke:{}({}) — approve? [y/n/a(all)]", tc.name, compact_args(&tc.arguments)).as_str());
                     let mut resp = String::new();
                     std::io::stdin().read_line(&mut resp)?;
                     let resp = resp.trim().to_lowercase();
                     match resp.as_str() {
                         "a" | "all" => {
                             allow_all = true;
-                            println!("[zakhar] ✓ approved (all) invoke:{}", tc.name);
-                            std::io::stdout().flush().ok();
                             true
                         }
-                        "y" | "yes" | "" => {
-                            println!("[zakhar] ✓ approved invoke:{}", tc.name);
-                            std::io::stdout().flush().ok();
-                            true
-                        }
-                        _ => {
-                            println!("[zakhar] ✗ denied invoke:{}", tc.name);
-                            std::io::stdout().flush().ok();
-                            false
-                        }
+                        "y" | "yes" | "" => true,
+                        _ => false,
                     }
                 };
 
                 if !approved {
-                    println!("[zakhar] ✗ denied {}", tc.name);
-                    std::io::stdout().flush().ok();
                     runner.push(crate::types::Message::tool(
                         tc.id.clone(),
                         "tool call denied by user".to_string(),
@@ -316,8 +270,7 @@ pub async fn chat(
                 }
 
                 if let Err(e) = hooks::run_pre(&tc.name, &tc.arguments) {
-                    println!("[hooks] ✗ pre-hook blocked {}: {e}", tc.name);
-                    std::io::Write::flush(&mut std::io::stdout()).ok();
+                    ui.err(format!("pre-hook blocked {}: {e}", tc.name).as_str());
                     outputs.insert(tc.id.clone(), format!("blocked by pre-hook: {e}"));
                     continue;
                 }
@@ -342,8 +295,6 @@ pub async fn chat(
                             format!("error: {kind} requires 'agent' and 'task', got {}", tc.arguments),
                         );
                     } else {
-                        println!("[zakhar] → {kind} → {agent}: \"{}\" …", truncate(&task, 80));
-                        std::io::Write::flush(&mut std::io::stdout()).ok();
                         let cfg_clone = cfg.clone();
                         let prov_copy: &dyn crate::provider::Provider = p;
                         let agent_c = agent.clone();
@@ -368,51 +319,50 @@ pub async fn chat(
                         .get("args")
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
-                    println!("[zakhar] → slash {cmd} {args} …");
-                    std::io::Write::flush(&mut std::io::stdout()).ok();
                     let out = slash::handle_ai(cmd, args, &mut session, &mut runner);
-                    println!("[zakhar] ← slash {cmd} done: {}", out.lines().next().unwrap_or("").chars().take(80).collect::<String>());
-                    std::io::Write::flush(&mut std::io::stdout()).ok();
+                    ui.note(
+                        format!(
+                            "✓ slash {cmd} {}",
+                            out.lines().next().unwrap_or("").chars().take(80).collect::<String>()
+                        )
+                        .as_str(),
+                    );
                     hooks::run_post(&tc.name, &tc.arguments, &out);
                     outputs.insert(tc.id.clone(), out);
                 } else {
-                    println!("[zakhar] → invoke({}) …", tc.name);
-                    std::io::Write::flush(&mut std::io::stdout()).ok();
                     let out = inv.exec(&tc.name, &tc.arguments);
                     let preview: String = out.chars().take(500).collect();
                     if out.len() > 500 {
-                        println!("[zakhar] ← invoke({}) done ({} bytes): {} …", tc.name, out.len(), preview);
+                        ui.note(format!("✓ {}({} bytes): {} …", tc.name, out.len(), preview).as_str());
                     } else {
-                        println!("[zakhar] ← invoke({}) done: {}", tc.name, preview);
+                        ui.note(format!("✓ {}: {}", tc.name, preview).as_str());
                     }
-                    std::io::Write::flush(&mut std::io::stdout()).ok();
                     hooks::run_post(&tc.name, &tc.arguments, &out);
                     outputs.insert(tc.id.clone(), out);
                 }
             }
 
             if denied {
-                println!("[zakhar] ✗ tool calls denied, ending turn");
-                std::io::stdout().flush().ok();
+                ui.err("tool calls denied, ending turn");
                 break;
             }
 
             if !delegate_futures.is_empty() {
                 let has_handoff = delegate_kinds.iter().any(|k| k == "handoff");
-                println!(
-                    "[zakhar] → running {} delegate/handoff(s) in parallel …",
-                    delegate_futures.len()
+                ui.note(
+                    format!(
+                        "→ running {} delegate/handoff(s) in parallel …",
+                        delegate_futures.len()
+                    )
+                    .as_str(),
                 );
-                std::io::Write::flush(&mut std::io::stdout()).ok();
                 let results = futures::future::join_all(delegate_futures).await;
                 for ((id, kind), res) in delegate_ids.into_iter().zip(delegate_kinds).zip(results) {
-                    println!("[zakhar] ← {kind} {id} done ({} bytes)", res.len());
-                    std::io::Write::flush(&mut std::io::stdout()).ok();
+                    ui.note(format!("✓ {kind} {id} ({})", pretty_bytes(res.len())).as_str());
                     outputs.insert(id, res);
                 }
                 if has_handoff {
-                    println!("[zakhar] ↪ handoff complete, pipeline will continue");
-                    std::io::Write::flush(&mut std::io::stdout()).ok();
+                    ui.note("↪ handoff complete, pipeline will continue");
                 }
             }
 
@@ -427,14 +377,10 @@ pub async fn chat(
                 ));
             }
 
-            println!("[zakhar] ↻ feeding tool results back, continuing loop …");
-            std::io::Write::flush(&mut std::io::stdout()).ok();
+            ui.note("↻ feeding tool results back, continuing loop …");
         }
-        println!("[zakhar] … saving session");
-        std::io::stdout().flush().ok();
         session.save()?;
-        println!("[zakhar] ✓ turn complete");
-        std::io::stdout().flush().ok();
+        ui.ok("turn complete");
     }
     Ok(())
 }
@@ -464,11 +410,13 @@ fn compact_args(args: &serde_json::Value) -> String {
     }
 }
 
-fn truncate(s: &str, n: usize) -> String {
-    if s.len() <= n {
-        s.to_string()
+fn pretty_bytes(n: usize) -> String {
+    if n < 1024 {
+        format!("{n} B")
+    } else if n < 1024 * 1024 {
+        format!("{:.1} KB", n as f64 / 1024.0)
     } else {
-        format!("{}...", &s[..n])
+        format!("{:.1} MB", n as f64 / (1024.0 * 1024.0))
     }
 }
 

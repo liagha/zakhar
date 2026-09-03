@@ -67,35 +67,8 @@ impl Provider for OpenAI {
         let mut body = serde_json::to_value(&request)?;
         body["stream"] = json!(true);
 
-        let model = request.model.clone();
-        let msg_count = request.messages.len();
-        let tool_count = request.tools.as_ref().map(|t| t.len()).unwrap_or(0);
-
         let mut last_err = None;
         for attempt in 0..=self.max_retries {
-            if attempt == 0 {
-                println!(
-                    "[zakhar] → POST {} model={} msgs={} tools={} attempt {}/{}",
-                    self.endpoint(),
-                    model,
-                    msg_count,
-                    tool_count,
-                    attempt + 1,
-                    self.max_retries + 1
-                );
-            } else {
-                println!(
-                    "[zakhar] → retry POST {} model={} attempt {}/{}",
-                    self.endpoint(),
-                    model,
-                    attempt + 1,
-                    self.max_retries + 1
-                );
-            }
-            std::io::Write::flush(&mut std::io::stdout()).ok();
-            println!("[zakhar] … waiting for response (stream) …");
-            std::io::Write::flush(&mut std::io::stdout()).ok();
-
             let mut builder = self.client.post(self.endpoint()).json(&body);
             if !self.api_key.is_empty() {
                 builder = builder.bearer_auth(&self.api_key);
@@ -103,8 +76,6 @@ impl Provider for OpenAI {
 
             match builder.send().await {
                 Ok(response) if response.status().is_success() => {
-                    println!("[zakhar] ✓ connected, streaming response …");
-                    std::io::Write::flush(&mut std::io::stdout()).ok();
                     let byte_stream = response
                         .bytes_stream()
                         .map(|chunk| chunk.map(|b| b.to_vec()).map_err(|e| anyhow::anyhow!(e)));
@@ -117,12 +88,8 @@ impl Provider for OpenAI {
                 Ok(response) => {
                     let status = response.status();
                     let text = response.text().await.unwrap_or_default();
-                    println!("[zakhar] ✗ provider error {}: {}", status, text);
-                    std::io::Write::flush(&mut std::io::stdout()).ok();
                     if status.as_u16() == 429 && attempt < self.max_retries {
                         let delay_secs = 2u64.pow(attempt);
-                        println!("[zakhar] ↻ rate limited, retrying in {delay_secs}s …");
-                        std::io::Write::flush(&mut std::io::stdout()).ok();
                         tokio::time::sleep(tokio::time::Duration::from_secs(delay_secs)).await;
                         last_err = Some(anyhow::anyhow!("provider error {}: {}", status, text));
                         continue;
@@ -130,12 +97,8 @@ impl Provider for OpenAI {
                     anyhow::bail!("provider error {}: {}", status, text);
                 }
                 Err(e) => {
-                    println!("[zakhar] ✗ request failed: {e}");
-                    std::io::Write::flush(&mut std::io::stdout()).ok();
                     if attempt < self.max_retries {
                         let delay_secs = 2u64.pow(attempt);
-                        println!("[zakhar] ↻ retrying in {delay_secs}s …");
-                        std::io::Write::flush(&mut std::io::stdout()).ok();
                         tokio::time::sleep(tokio::time::Duration::from_secs(delay_secs)).await;
                         last_err = Some(e.into());
                         continue;

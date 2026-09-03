@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use colored::Colorize;
 use serde_json::{json, Value};
 
 use crate::agent::Runner;
@@ -132,8 +133,8 @@ pub async fn run(
         provider.list_models().first().cloned().unwrap_or_default()
     };
 
-    let prefix = format!("[zakhar:delegate:{agent_name}:{depth}]");
-    println!("{prefix} → spawning agent '{agent_name}' model={model} task=\"{}\"", truncate(task, 80));
+    let prefix = format!("{}", "  ▸".dimmed());
+    println!("{prefix} {agent_name}: \"{}\"", truncate(task, 80));
     std::io::Write::flush(&mut std::io::stdout()).ok();
 
     let mut runner = Runner::new(provider, model.clone(), Some(agent_cfg));
@@ -177,14 +178,12 @@ pub async fn run(
     let mut turns = 0;
     while turns < MAX_TURNS {
         turns += 1;
-        println!("{prefix} → turn {turns}/{MAX_TURNS} sending request …");
-        std::io::Write::flush(&mut std::io::stdout()).ok();
 
         let stream = match runner.stream().await {
             Ok(s) => s,
             Err(e) => {
-                let msg = format!("{prefix} ✗ delegate stream failed: {e}");
-                println!("{msg}");
+                let msg = format!("{prefix} ✗ {agent_name} failed: {e}");
+                println!("{}", msg.dimmed());
                 std::io::Write::flush(&mut std::io::stdout()).ok();
                 return msg;
             }
@@ -192,8 +191,6 @@ pub async fn run(
 
         use futures::StreamExt;
         let mut full = String::new();
-        let mut saw_reasoning = false;
-        let mut had_reasoning = false;
         let mut tool_parts: HashMap<usize, ToolCallPartAccum> = HashMap::new();
         let mut events_seen = 0usize;
 
@@ -203,41 +200,24 @@ pub async fn run(
                 let event = match event {
                     Ok(ev) => ev,
                     Err(e) => {
-                        println!("{prefix} ✗ stream error: {e}");
+                        println!("{}", format!("{prefix} ✗ stream error: {e}").dimmed());
                         std::io::Write::flush(&mut std::io::stdout()).ok();
                         return format!("{prefix} stream error: {e}");
                     }
                 };
                 match event {
                     crate::provider::ChatStreamEvent::Reasoning(t) => {
-                        if events_seen == 0 {
-                            println!("{prefix} … receiving (reasoning) …");
-                            std::io::Write::flush(&mut std::io::stdout()).ok();
-                        }
                         events_seen += 1;
-                        saw_reasoning = true;
-                        print!("{}", t);
+                        print!("{}", t.dimmed().italic());
                         std::io::Write::flush(&mut std::io::stdout()).ok();
                     }
                     crate::provider::ChatStreamEvent::Text(t) => {
-                        if events_seen == 0 {
-                            println!("{prefix} … receiving (content) …");
-                            std::io::Write::flush(&mut std::io::stdout()).ok();
-                        }
                         events_seen += 1;
-                        if saw_reasoning && !had_reasoning {
-                            had_reasoning = true;
-                            println!();
-                        }
                         print!("{t}");
                         std::io::Write::flush(&mut std::io::stdout()).ok();
                         full.push_str(&t);
                     }
                     crate::provider::ChatStreamEvent::ToolCall(part) => {
-                        if events_seen == 0 {
-                            println!("{prefix} … receiving (tool_call) …");
-                            std::io::Write::flush(&mut std::io::stdout()).ok();
-                        }
                         events_seen += 1;
                         let entry = tool_parts.entry(part.index).or_default();
                         if let Some(id) = part.id {
@@ -256,9 +236,7 @@ pub async fn run(
         }
 
         if events_seen == 0 {
-            println!("\n{prefix} … stream ended with no content");
-        } else {
-            println!("\n{prefix} ✓ stream done ({} events, {} chars)", events_seen, full.len());
+            println!("{}", format!("{prefix} … {agent_name} stream ended with no content").dimmed());
         }
         std::io::Write::flush(&mut std::io::stdout()).ok();
 
@@ -281,20 +259,24 @@ pub async fn run(
             .collect();
 
         if tool_calls.is_empty() {
-            println!("{prefix} ✓ delegate '{agent_name}' complete ({} chars)", full.len());
+            println!("{}", format!("{prefix} ✓ {agent_name} done ({} chars)", full.len()).dimmed());
             std::io::Write::flush(&mut std::io::stdout()).ok();
             runner.push(Message::assistant(full.clone(), None));
             return full;
         }
 
         println!(
-            "{prefix} → {} tool call(s): {}",
-            tool_calls.len(),
-            tool_calls
-                .iter()
-                .map(|tc| format!("{}({})", tc.name, compact_args(&tc.arguments)))
-                .collect::<Vec<_>>()
-                .join(", ")
+            "{}",
+            format!(
+                "{prefix} → {}: {}",
+                tool_calls.len(),
+                tool_calls
+                    .iter()
+                    .map(|tc| format!("{}({})", tc.name, compact_args(&tc.arguments)))
+                    .collect::<Vec<_>>()
+                    .join(" · ")
+            )
+            .dimmed()
         );
         std::io::Write::flush(&mut std::io::stdout()).ok();
 
@@ -307,7 +289,7 @@ pub async fn run(
 
         for tc in &tool_calls {
             if let Err(e) = hooks::run_pre(&tc.name, &tc.arguments) {
-                println!("{prefix} [hooks] ✗ pre-hook blocked {}: {e}", tc.name);
+                println!("{}", format!("{prefix} ✗ pre-hook blocked {}: {e}", tc.name).dimmed());
                 std::io::Write::flush(&mut std::io::stdout()).ok();
                 outputs.insert(tc.id.clone(), format!("blocked by pre-hook: {e}"));
                 continue;
@@ -367,11 +349,11 @@ pub async fn run(
                 hooks::run_post(&tc.name, &tc.arguments, &out);
                 outputs.insert(tc.id.clone(), out);
             } else {
-                println!("{prefix} → invoke({}) …", tc.name);
+                println!("{}", format!("{prefix} → invoke({}) …", tc.name).dimmed());
                 std::io::Write::flush(&mut std::io::stdout()).ok();
                 let out = invoke.exec(&tc.name, &tc.arguments);
                 let preview = truncate(&out, 300);
-                println!("{prefix} ← invoke({}) done: {preview}", tc.name);
+                println!("{}", format!("{prefix} ✓ {}({})", tc.name, preview).dimmed());
                 std::io::Write::flush(&mut std::io::stdout()).ok();
                 hooks::run_post(&tc.name, &tc.arguments, &out);
                 outputs.insert(tc.id.clone(), out);
@@ -380,13 +362,17 @@ pub async fn run(
 
         if !delegate_futures.is_empty() {
             println!(
-                "{prefix} → running {} delegate/handoff(s) in parallel …",
-                delegate_futures.len()
+                "{}",
+                format!(
+                    "{prefix} → running {} delegate/handoff(s) in parallel …",
+                    delegate_futures.len()
+                )
+                .dimmed()
             );
             std::io::Write::flush(&mut std::io::stdout()).ok();
             let results = futures::future::join_all(delegate_futures).await;
             for (id, res) in delegate_ids.into_iter().zip(results) {
-                println!("{prefix} ← delegate {id} done ({} bytes)", res.len());
+                println!("{}", format!("{prefix} ✓ {id} ({})", pretty_bytes(res.len())).dimmed());
                 std::io::Write::flush(&mut std::io::stdout()).ok();
                 outputs.insert(id, res);
             }
@@ -399,14 +385,15 @@ pub async fn run(
             // handoff semantics: if was handoff, its output becomes the pipeline result
             // we still push as tool result; the outer loop will feed it back, but we log it
             if tc.name == "handoff" {
-                println!("{prefix} ↪ handoff from {} complete", tc.arguments.get("agent").and_then(|v| v.as_str()).unwrap_or("?"));
+                let src = tc.arguments.get("agent").and_then(|v| v.as_str()).unwrap_or("?");
+                println!("{}", format!("{prefix} ↪ handoff from {src} complete").dimmed());
                 std::io::Write::flush(&mut std::io::stdout()).ok();
             }
             runner.push(Message::tool(tc.id.clone(), out));
         }
     }
 
-    format!("{prefix} error: max turns ({MAX_TURNS}) reached without final answer")
+    format!("{prefix} ✗ max turns ({MAX_TURNS}) reached without final answer")
 }
 
 fn compact_args(args: &Value) -> String {
@@ -439,6 +426,16 @@ fn truncate(s: &str, n: usize) -> String {
         s.to_string()
     } else {
         format!("{}...", &s[..n])
+    }
+}
+
+fn pretty_bytes(n: usize) -> String {
+    if n < 1024 {
+        format!("{n} B")
+    } else if n < 1024 * 1024 {
+        format!("{:.1} KB", n as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", n as f64 / (1024.0 * 1024.0))
     }
 }
 

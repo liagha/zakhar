@@ -17,12 +17,19 @@ referenced from an environment variable with `{env:NAME}`.
 ## Usage
 
 ```sh
-zakhar chat --provider zen   # interactive chat
+zakhar chat --provider zen   # interactive chat (modern UI)
 zakhar chat --model big-pickle
 zakhar chat --agent default  # use a configured agent
+zakhar chat --simple         # plain text UI (no markdown/colors/status line)
 zakhar models                # list providers and models
-zakhar serve --port 8787     # run an OpenAI-compatible server
 ```
+
+## UI
+
+`zakhar chat` uses a modern terminal UI by default: assistant responses are
+rendered as colored markdown (headings, bold, code, tables, links, lists), and
+progress/status messages collapse into a single updating line. Pass `--simple`
+to fall back to a plain stream of raw text and `[zakhar]` status lines.
 
 ## Config
 

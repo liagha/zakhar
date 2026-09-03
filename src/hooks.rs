@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 struct Hook {
+    #[allow(dead_code)]
     #[serde(rename = "type")]
     hook_type: String,
     command: String,
@@ -24,15 +25,10 @@ fn load_config() -> Option<HooksConfig> {
     for path in [".zakhar/hooks.json", ".opencode/hooks.json", "hooks.json"] {
         if let Ok(text) = std::fs::read_to_string(path) {
             if let Ok(cfg) = serde_json::from_str::<HooksConfig>(&text) {
-                println!("[hooks] loaded {path}");
                 return Some(cfg);
             }
-            // try as raw map
             if let Ok(map) = serde_json::from_str::<HashMap<String, Vec<HookEntry>>>(&text) {
-                let mut cfg = HooksConfig::default();
-                cfg.hooks = map;
-                println!("[hooks] loaded {path} (legacy)");
-                return Some(cfg);
+                return Some(HooksConfig { hooks: map });
             }
         }
     }
@@ -68,7 +64,6 @@ pub fn run_pre(tool: &str, args: &Value) -> Result<(), String> {
         for entry in entries {
             if matches(&entry.matcher, tool) {
                 for hook in &entry.hooks {
-                    println!("[hooks] PreToolUse {tool} → {}", hook.command);
                     let out = std::process::Command::new("sh")
                         .arg("-c")
                         .arg(&hook.command)
@@ -79,12 +74,6 @@ pub fn run_pre(tool: &str, args: &Value) -> Result<(), String> {
                         Ok(o) => {
                             let stdout = String::from_utf8_lossy(&o.stdout);
                             let stderr = String::from_utf8_lossy(&o.stderr);
-                            if !stdout.trim().is_empty() {
-                                println!("[hooks] pre stdout: {}", stdout.trim());
-                            }
-                            if !stderr.trim().is_empty() {
-                                println!("[hooks] pre stderr: {}", stderr.trim());
-                            }
                             if !o.status.success() {
                                 let msg = if !stderr.trim().is_empty() { stderr.trim().to_string() } else { stdout.trim().to_string() };
                                 return Err(format!("pre-hook blocked {tool}: {} (exit {})", msg, o.status.code().unwrap_or(-1)));
@@ -109,7 +98,6 @@ pub fn run_post(tool: &str, args: &Value, output: &str) {
         for entry in entries {
             if matches(&entry.matcher, tool) {
                 for hook in &entry.hooks {
-                    println!("[hooks] PostToolUse {tool} → {}", hook.command);
                     let _ = std::process::Command::new("sh")
                         .arg("-c")
                         .arg(&hook.command)
