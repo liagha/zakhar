@@ -40,12 +40,11 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
             .to_string(),
     ));
 
-    if let Some(mem) = crate::memory::load() {
+    for (label, text) in crate::memory::load_blocks() {
         runner.push(crate::types::Message::system(format!(
-            "Project memory:\n{mem}"
+            "{label}:\n{text}"
         )));
     }
-
     let ctx = crate::tools::context_index();
     if ctx != "no saved context" {
         runner.push(crate::types::Message::system(format!(
@@ -68,6 +67,10 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
 
     let mut session = Session::new();
     let text = run_tool_loop(&mut ui, &mut runner, &cfg, &inv, p, &mut session).await?;
+
+    if let Err(e) = crate::memory::episodic::append("phrase", &text) {
+        println!("[memory] failed to log event: {e}");
+    }
 
     if let Some(seed) = crate::invoke::chat_message() {
         super::chat(None, None, None, true, false, false, false, seed).await?;
@@ -233,7 +236,22 @@ async fn run_tool_loop(
                 ui.status(format!("↷ {}", tc.name).as_str());
                 let out = inv.exec(&tc.name, &tc.arguments);
                 hooks::run_post(&tc.name, &tc.arguments, &out);
+                let skill_msg = if tc.name == "skill"
+                    && let Some(name) = tc.arguments.get("name").and_then(|v| v.as_str())
+                    && !name.is_empty()
+                    && !out.starts_with("error:")
+                    && !out.contains("available skills")
+                {
+                    Some(format!(
+                        "You have loaded the skill '{name}'. Apply its instructions:\n\n{out}"
+                    ))
+                } else {
+                    None
+                };
                 outputs.insert(tc.id.clone(), out);
+                if let Some(msg) = skill_msg {
+                    runner.push(crate::types::Message::system(msg));
+                }
             }
         }
 

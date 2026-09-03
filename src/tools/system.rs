@@ -81,6 +81,40 @@ impl Handler for Skill {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn with_cwd(dir: &std::path::Path, f: impl FnOnce()) {
+        let orig = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir).unwrap();
+        f();
+        std::env::set_current_dir(&orig).unwrap();
+    }
+
+    #[test]
+    fn loads_from_zakhar_skills() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".zakhar/skills/custom")).unwrap();
+        std::fs::write(dir.path().join(".zakhar/skills/custom/SKILL.md"), "do the thing").unwrap();
+        with_cwd(dir.path(), || {
+            let tool = Skill;
+            let out = tool.run(&json!({"name": "custom"})).unwrap();
+            assert_eq!(out, "do the thing");
+        });
+    }
+
+    #[test]
+    fn missing_skill_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        with_cwd(dir.path(), || {
+            let tool = Skill;
+            let err = tool.run(&json!({"name": "nope"})).unwrap_err();
+            assert!(err.to_string().contains("'nope' not found"));
+        });
+    }
+}
+
 pub struct Control;
 impl Handler for Control {
     fn spec(&self) -> Tool {

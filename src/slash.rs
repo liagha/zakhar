@@ -3,7 +3,7 @@ use serde_json::json;
 use crate::types::Tool;
 
 pub fn tool_def() -> Tool {
-    let mut available = vec!["/clear", "/compact", "/init", "/help", "/agents", "/skills"];
+    let mut available = vec!["/clear", "/compact", "/init", "/help", "/agents", "/skills", "/memory"];
     // discover custom commands
     for dir in [".opencode/commands", ".zakhar/commands", "commands"] {
         if let Ok(entries) = std::fs::read_dir(dir) {
@@ -114,6 +114,7 @@ fn dispatch(cmd: &str, args: &str, session: &mut crate::session::Session, runner
             out.push_str("  /help - this help\n");
             out.push_str("  /agents - list agents\n");
             out.push_str("  /skills - list skills (same as skill tool)\n");
+            out.push_str("  /memory - browse/search/drop/compact memory\n");
             // custom
             for dir in [".opencode/commands", ".zakhar/commands"] {
                 if let Ok(entries) = std::fs::read_dir(dir) {
@@ -156,6 +157,7 @@ fn dispatch(cmd: &str, args: &str, session: &mut crate::session::Session, runner
                 out
             }
         }
+        "/memory" => memory(args),
         _ => {
             // try custom slash file
             let name = cmd.trim_start_matches('/');
@@ -173,4 +175,73 @@ fn dispatch(cmd: &str, args: &str, session: &mut crate::session::Session, runner
             format!("unknown slash command {cmd}. Try /help")
         }
     }
+}
+
+fn memory(args: &str) -> String {
+    let mut parts = args.splitn(2, ' ');
+    let sub = parts.next().unwrap_or("").trim();
+    let rest = parts.next().unwrap_or("").trim();
+
+    let events = crate::memory::episodic::block(20);
+    let mut out = String::new();
+
+    match sub {
+        "" => {
+            out.push_str("## context keys\n");
+            let keys = crate::tools::context::keys();
+            if keys.is_empty() {
+                out.push_str("  (none)\n");
+            } else {
+                for k in keys {
+                    let v = crate::tools::context::value(&k).unwrap_or_default();
+                    let preview: String = v.chars().take(60).collect();
+                    out.push_str(&format!("  - {k}: {preview}\n"));
+                }
+            }
+            out.push_str("## recent events\n");
+            out.push_str(&format!("  {}", events.replace('\n', "\n  ")));
+        }
+        "drop" => {
+            if rest.is_empty() {
+                return "usage: /memory drop <key>".to_string();
+            }
+            match crate::tools::context::remove(rest) {
+                Some(v) => out.push_str(&format!("dropped context key '{rest}' ({} bytes)", v.len())),
+                None => out.push_str(&format!("no context key '{rest}'")),
+            }
+        }
+        "compact" => match crate::memory::episodic::compact() {
+            Ok(msg) => out.push_str(&msg),
+            Err(e) => out.push_str(&format!("error: {e}")),
+        },
+        "search" => {
+            if rest.is_empty() {
+                return "usage: /memory search <text>".to_string();
+            }
+            out.push_str("## context matches\n");
+            let hits = crate::tools::context::recall(rest, 5);
+            if hits.is_empty() {
+                out.push_str("  (none)\n");
+            } else {
+                for (k, v) in hits {
+                    out.push_str(&format!("  - {k}: {v}\n"));
+                }
+            }
+            out.push_str("## event matches\n");
+            let needle = rest.to_lowercase();
+            let mut found = false;
+            for e in crate::memory::episodic::recent(200) {
+                if e.text.to_lowercase().contains(&needle) || e.kind.to_lowercase().contains(&needle) {
+                    out.push_str(&format!("  [{}] {}: {}\n", e.ts, e.kind, e.text));
+                    found = true;
+                }
+            }
+            if !found {
+                out.push_str("  (none)\n");
+            }
+        }
+        other => out.push_str(&format!("unknown /memory subcommand '{other}'. Try /memory, /memory drop <key>, /memory compact, /memory search <text>")),
+    }
+
+    out
 }

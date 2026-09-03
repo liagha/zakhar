@@ -1,5 +1,5 @@
 mod ask;
-mod context;
+pub(crate) mod context;
 mod exec;
 mod fs;
 mod system;

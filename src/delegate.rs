@@ -138,8 +138,8 @@ pub async fn run(
     std::io::Write::flush(&mut std::io::stdout()).ok();
 
     let mut runner = Runner::new(provider, model.clone(), Some(agent_cfg));
-    if let Some(mem) = crate::memory::load() {
-        runner.push(Message::system(format!("Project memory:\n{mem}")));
+    for (label, text) in crate::memory::load_blocks() {
+        runner.push(Message::system(format!("{label}:\n{text}")));
     }
     if plan {
         runner.push(Message::system(

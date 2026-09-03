@@ -75,15 +75,60 @@ pub fn index() -> String {
     out
 }
 
+pub fn keys() -> Vec<String> {
+    load().entries.into_keys().collect()
+}
+
+pub fn value(key: &str) -> Option<String> {
+    load().entries.get(key).map(|e| e.value.clone())
+}
+
+pub fn remove(key: &str) -> Option<String> {
+    let mut store = load();
+    let removed = store.entries.remove(key)?;
+    save(&store).ok()?;
+    Some(removed.value)
+}
+
+pub fn recall(query: &str, top: usize) -> Vec<(String, String)> {
+    let lower = query.to_lowercase();
+    let terms: Vec<&str> = lower
+        .split_whitespace()
+        .filter(|t| t.chars().count() > 1)
+        .collect();
+    if terms.is_empty() {
+        return Vec::new();
+    }
+    let store = load();
+    let mut scored: Vec<(usize, String, String)> = store
+        .entries
+        .iter()
+        .map(|(key, entry)| {
+            let hay = format!("{key} {}", entry.value).to_lowercase();
+            let score = terms.iter().filter(|t| hay.contains(**t)).count();
+            (score, key.clone(), entry.value.clone())
+        })
+        .collect();
+    scored.sort_by_key(|(s, _, _)| std::cmp::Reverse(*s));
+    scored
+        .into_iter()
+        .filter(|(s, _, _)| *s > 0)
+        .take(top)
+        .map(|(_, k, v)| (k, v))
+        .collect()
+}
+
 pub struct Context;
 impl Handler for Context {
     fn spec(&self) -> Tool {
-        def("context", "Persistent key-value memory for this project, shared across sessions. action='save' stores a value under a key (upsert); action='get' returns a key's value; action='list' shows all keys with previews; action='drop' removes a key. Use to remember decisions, plans, and facts between runs. The keys are auto-loaded into context at startup, so get/list. Call save when you produce something worth remembering.", json!({
+        def("context", "Persistent key-value memory for this project, shared across sessions. action='save' stores a value under a key (upsert); action='get' returns a key's value; action='list' shows all keys with previews; action='drop' removes a key; action='recall' ranks entries by keyword relevance to a query (pass query + optional top). Use to remember decisions, plans, and facts between runs. The keys are auto-loaded into context at startup, so get/list. Call save when you produce something worth remembering.", json!({
             "type": "object",
             "properties": {
-                "action": { "type": "string", "enum": ["save", "get", "list", "drop"], "description": "What to do with context" },
+                "action": { "type": "string", "enum": ["save", "get", "list", "drop", "recall"], "description": "What to do with context" },
                 "key": { "type": "string", "description": "Name of the entry (for save/get/drop)" },
-                "value": { "type": "string", "description": "Content to store (only for action=save)" }
+                "value": { "type": "string", "description": "Content to store (only for action=save)" },
+                "query": { "type": "string", "description": "Search text (only for action=recall)" },
+                "top": { "type": "integer", "description": "Max results for recall (default 5)" }
             },
             "required": ["action"]
         }))
@@ -112,7 +157,7 @@ impl Handler for Context {
                 let store = load();
                 match store.entries.get(key) {
                     Some(entry) => Ok(entry.value.clone()),
-                    None => Ok(format!("no context key '{key}'")),
+                    None => Ok(format!("context lookup: no key '{key}' saved yet. Treat this as 'not in stored memory' — do NOT say you have nothing or ask for the value if the user just provided it; use what the user said in the conversation.")),
                 }
             }
             "list" => {
@@ -134,6 +179,22 @@ impl Handler for Context {
                 } else {
                     Ok(format!("no context key '{key}'"))
                 }
+            }
+            "recall" => {
+                let query = args.get("query").and_then(|v| v.as_str()).unwrap_or("");
+                if query.is_empty() {
+                    anyhow::bail!("missing query");
+                }
+                let top = args.get("top").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
+                let hits = recall(query, top);
+                if hits.is_empty() {
+                    return Ok(format!("no context entries match '{query}'"));
+                }
+                let mut out = String::new();
+                for (key, value) in hits {
+                    out.push_str(&format!("- {key}: {value}\n"));
+                }
+                Ok(out)
             }
             a => anyhow::bail!("unknown action {a}"),
         }
@@ -172,6 +233,17 @@ mod tests {
         tool.run(&json!({"action": "save", "key": "x", "value": "1"})).unwrap();
         tool.run(&json!({"action": "drop", "key": "x"})).unwrap();
         let out = tool.run(&json!({"action": "get", "key": "x"})).unwrap();
-        assert_eq!(out, "no context key 'x'");
+        assert!(out.contains("no key 'x'"), "got: {out}");
+    }
+
+    #[test]
+    fn recall_ranks_by_keyword() {
+        let _g = tmp_store();
+        let tool = Context;
+        tool.run(&json!({"action": "save", "key": "plan", "value": "build the watch tool"})).unwrap();
+        tool.run(&json!({"action": "save", "key": "food", "value": "like pizza and pasta"})).unwrap();
+        let out = tool.run(&json!({"action": "recall", "query": "tool"})).unwrap();
+        assert!(out.contains("plan"), "got: {out}");
+        assert!(!out.contains("food"), "got: {out}");
     }
 }

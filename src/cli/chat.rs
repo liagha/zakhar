@@ -51,8 +51,8 @@ pub async fn chat(
     let mut session = Session::new();
     let mut runner = Runner::new(p, model.clone(), agent_cfg);
 
-    if let Some(mem) = crate::memory::load() {
-        runner.push(crate::types::Message::system(format!("Project memory:\n{mem}")));
+    for (label, text) in crate::memory::load_blocks() {
+        runner.push(crate::types::Message::system(format!("{label}:\n{text}")));
     }
     let ctx = crate::tools::context_index();
     if ctx != "no saved context" {
@@ -214,6 +214,11 @@ pub async fn chat(
                 .collect();
 
             if tool_calls.is_empty() || invoke.is_none() {
+                if !full.trim().is_empty()
+                    && let Err(e) = crate::memory::episodic::append("chat", &full)
+                {
+                    println!("[memory] failed to log event: {e}");
+                }
                 runner.push(crate::types::Message::assistant(full.clone(), None));
                 session
                     .messages
@@ -366,7 +371,22 @@ pub async fn chat(
                         ui.note(format!("✓ {}: {}", tc.name, preview).as_str());
                     }
                     hooks::run_post(&tc.name, &tc.arguments, &out);
+                    let skill_msg = if tc.name == "skill"
+                        && let Some(name) = tc.arguments.get("name").and_then(|v| v.as_str())
+                        && !name.is_empty()
+                        && !out.starts_with("error:")
+                        && !out.contains("available skills")
+                    {
+                        Some(format!(
+                            "You have loaded the skill '{name}'. Apply its instructions:\n\n{out}"
+                        ))
+                    } else {
+                        None
+                    };
                     outputs.insert(tc.id.clone(), out);
+                    if let Some(msg) = skill_msg {
+                        runner.push(crate::types::Message::system(msg));
+                    }
                 }
             }
 
