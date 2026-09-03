@@ -12,16 +12,19 @@ mod slash;
 mod types;
 mod ui;
 
-use clap::Parser;
+use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "zakhar", version, about)]
 struct Cli {
+    /// free-text command, e.g. `zakhar search here`, `zakhar delete the logs`
+    #[arg(trailing_var_arg = true)]
+    words: Vec<String>,
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
-#[derive(clap::Subcommand)]
+#[derive(Subcommand)]
 enum Command {
     Chat {
         #[arg(long, short)]
@@ -53,8 +56,9 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    match Cli::parse().command {
-        Command::Chat {
+    let cli = Cli::parse();
+    match (cli.command, cli.words) {
+        (Some(Command::Chat {
             provider,
             model,
             agent,
@@ -62,8 +66,15 @@ async fn main() -> anyhow::Result<()> {
             auto,
             plan,
             simple,
-        } => cli::chat(provider, model, agent, invoke, auto, plan, simple).await?,
-        Command::Models { provider } => cli::models(provider).await?,
+        }), _) => cli::chat(provider, model, agent, invoke, auto, plan, simple).await?,
+        (Some(Command::Models { provider }), _) => cli::models(provider).await?,
+        (None, words) if !words.is_empty() => {
+            cli::shout(words.join(" ")).await?;
+        }
+        (None, _) => {
+            let _ = Cli::command().print_help();
+            println!();
+        }
     }
     Ok(())
 }

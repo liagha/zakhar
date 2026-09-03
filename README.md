@@ -22,6 +22,11 @@ zakhar chat --model big-pickle
 zakhar chat --agent default  # use a configured agent
 zakhar chat --simple         # plain text UI (no markdown/colors/status line)
 zakhar models                # list providers and models
+
+# natural-language quick commands (no chat session)
+zakhar search here           # understand the phrase and do the task
+zakhar find "TODO" in src    # bare words = one-shot agent, live preview line
+zakhar delete the logs       # mutating tools wait for your [y/n]
 ```
 
 ## UI
