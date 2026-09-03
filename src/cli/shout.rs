@@ -213,6 +213,11 @@ async fn run_tool_loop(
                 let out = slash::handle_ai(cmd, args, session, runner);
                 hooks::run_post(&tc.name, &tc.arguments, &out);
                 outputs.insert(tc.id.clone(), out);
+            } else if tc.name == "ask_user" {
+                ui.end();
+                let out = inv.exec("ask_user", &tc.arguments);
+                hooks::run_post(&tc.name, &tc.arguments, &out);
+                outputs.insert(tc.id.clone(), out);
             } else {
                 ui.status(format!("↷ {}", tc.name).as_str());
                 let out = inv.exec(&tc.name, &tc.arguments);

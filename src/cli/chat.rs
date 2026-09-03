@@ -340,6 +340,17 @@ pub async fn chat(
                     );
                     hooks::run_post(&tc.name, &tc.arguments, &out);
                     outputs.insert(tc.id.clone(), out);
+                } else if tc.name == "ask_user" {
+                    ui.end();
+                    let out = inv.exec("ask_user", &tc.arguments);
+                    let preview: String = out.chars().take(500).collect();
+                    if out.len() > 500 {
+                        ui.note(format!("✓ {}({} bytes): {} …", tc.name, out.len(), preview).as_str());
+                    } else {
+                        ui.note(format!("✓ {}: {}", tc.name, preview).as_str());
+                    }
+                    hooks::run_post(&tc.name, &tc.arguments, &out);
+                    outputs.insert(tc.id.clone(), out);
                 } else {
                     let out = inv.exec(&tc.name, &tc.arguments);
                     let preview: String = out.chars().take(500).collect();
