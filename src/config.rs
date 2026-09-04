@@ -41,8 +41,5 @@ impl Config {
 }
 
 fn config_path() -> anyhow::Result<PathBuf> {
-    let dir = dirs::config_dir()
-        .ok_or_else(|| anyhow::anyhow!("no config dir"))?
-        .join("zakhar");
-    Ok(dir.join("config.toml"))
+    Ok(crate::paths::config_path())
 }

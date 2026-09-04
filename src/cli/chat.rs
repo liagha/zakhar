@@ -54,6 +54,15 @@ pub async fn chat(
     for (label, text) in crate::memory::load_blocks() {
         runner.push(crate::types::Message::system(format!("{label}:\n{text}")));
     }
+
+    {
+        let persisted = crate::tools::load_persisted_todos();
+        if !persisted.is_empty() {
+            runner.push(crate::types::Message::system(format!(
+                "Persisted todos from previous session:\n{persisted}"
+            )));
+        }
+    }
     let ctx = crate::tools::context_index();
     if ctx != "no saved context" {
         runner.push(crate::types::Message::system(format!(
@@ -129,6 +138,20 @@ pub async fn chat(
         }
         if let Some(out) = slash::handle_user(&text, &mut session, &mut runner) {
             ui.note(out.as_str());
+            if let Some(resume_id) = crate::invoke::take_resume_session() {
+                let _ = session.save();
+                match Session::load(&resume_id) {
+                    Ok(loaded) => {
+                        session = loaded;
+                        runner.messages_mut().retain(|m| m.role == crate::types::Role::System);
+                        for msg in &session.messages {
+                            runner.push(msg.clone());
+                        }
+                        ui.note(format!("↩ resumed session {} ({} messages)", &resume_id[..8], session.messages.len()).as_str());
+                    }
+                    Err(e) => ui.err(format!("failed to resume: {e}").as_str()),
+                }
+            }
             continue;
         }
 
@@ -214,10 +237,32 @@ pub async fn chat(
                 .collect();
 
             if tool_calls.is_empty() || invoke.is_none() {
-                if !full.trim().is_empty()
-                    && let Err(e) = crate::memory::episodic::append("chat", &full)
-                {
-                    println!("[memory] failed to log event: {e}");
+                if !full.trim().is_empty() {
+                    match crate::memory::episodic::append("chat", &full) {
+                        Ok(events) if !events.is_empty() => {
+                            // Compaction triggered — fire-and-forget LLM summary
+                            let pid = provider_id.clone();
+                            let mdl = model.clone();
+                            let cfg2 = cfg.clone();
+                            tokio::spawn(async move {
+                                let reg = crate::registry::build(&cfg2);
+                                if let Some(prov) = reg.get(&pid) {
+                                    match crate::memory::episodic::summarize_compaction(prov, &mdl, &events).await {
+                                        Ok(summary) => {
+                                            println!("[memory] compaction summary: {summary}");
+                                        }
+                                        Err(e) => {
+                                            println!("[memory] compaction summary failed: {e}");
+                                        }
+                                    }
+                                }
+                            });
+                        }
+                        Err(e) => {
+                            println!("[memory] failed to log event: {e}");
+                        }
+                        _ => {}
+                    }
                 }
                 runner.push(crate::types::Message::assistant(full.clone(), None));
                 session
@@ -237,18 +282,12 @@ pub async fn chat(
             ));
 
             if !tool_calls.is_empty() {
-                ui.note(
-                    format!(
-                        "→ {}: {}",
-                        tool_calls.len(),
-                        tool_calls
-                            .iter()
-                            .map(|tc| format!("{}({})", tc.name, compact_args(&tc.arguments)))
-                            .collect::<Vec<_>>()
-                            .join(" · ")
-                    )
-                    .as_str(),
-                );
+                let summary = tool_calls
+                    .iter()
+                    .map(|tc| format!("{}({})", tc.name, compact_args(&tc.arguments)))
+                    .collect::<Vec<_>>()
+                    .join(" · ");
+                ui.tool_call(&summary);
             }
             ui.end();
 
@@ -264,17 +303,14 @@ pub async fn chat(
                 let approved = if allow_all || auto_approve {
                     true
                 } else {
-                    ui.note(format!("invoke:{}({}) — approve? [y/n/a(all)]", tc.name, compact_args(&tc.arguments)).as_str());
-                    let mut resp = String::new();
-                    std::io::stdin().read_line(&mut resp)?;
-                    let resp = resp.trim().to_lowercase();
-                    match resp.as_str() {
-                        "a" | "all" => {
+                    let ch = ui.confirm(&format!("{}({})", tc.name, compact_args(&tc.arguments)));
+                    match ch {
+                        'a' => {
                             allow_all = true;
                             true
                         }
-                        "y" | "yes" | "" => true,
-                        _ => false,
+                        'n' => false,
+                        _ => true,
                     }
                 };
 
@@ -342,34 +378,21 @@ pub async fn chat(
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
                     let out = slash::handle_ai(cmd, args, &mut session, &mut runner);
-                    ui.note(
-                        format!(
-                            "✓ slash {cmd} {}",
-                            out.lines().next().unwrap_or("").chars().take(80).collect::<String>()
-                        )
-                        .as_str(),
-                    );
+                    let preview = out.lines().next().unwrap_or("").chars().take(80).collect::<String>();
+                    ui.tool_result(&format!("slash {cmd}"), &preview, out.len());
                     hooks::run_post(&tc.name, &tc.arguments, &out);
                     outputs.insert(tc.id.clone(), out);
                 } else if tc.name == "ask" {
                     ui.end();
                     let out = inv.exec("ask", &tc.arguments);
                     let preview: String = out.chars().take(500).collect();
-                    if out.len() > 500 {
-                        ui.note(format!("✓ {}({} bytes): {} …", tc.name, out.len(), preview).as_str());
-                    } else {
-                        ui.note(format!("✓ {}: {}", tc.name, preview).as_str());
-                    }
+                    ui.tool_result("ask", &preview, out.len());
                     hooks::run_post(&tc.name, &tc.arguments, &out);
                     outputs.insert(tc.id.clone(), out);
                 } else {
                     let out = inv.exec(&tc.name, &tc.arguments);
                     let preview: String = out.chars().take(500).collect();
-                    if out.len() > 500 {
-                        ui.note(format!("✓ {}({} bytes): {} …", tc.name, out.len(), preview).as_str());
-                    } else {
-                        ui.note(format!("✓ {}: {}", tc.name, preview).as_str());
-                    }
+                    ui.tool_result(&tc.name, &preview, out.len());
                     hooks::run_post(&tc.name, &tc.arguments, &out);
                     let skill_msg = if tc.name == "skill"
                         && let Some(name) = tc.arguments.get("name").and_then(|v| v.as_str())
@@ -406,7 +429,8 @@ pub async fn chat(
                 );
                 let results = futures::future::join_all(delegate_futures).await;
                 for ((id, kind), res) in delegate_ids.into_iter().zip(delegate_kinds).zip(results) {
-                    ui.note(format!("✓ {kind} {id} ({})", pretty_bytes(res.len())).as_str());
+                    let preview: String = res.chars().take(500).collect();
+                    ui.tool_result(&kind, &preview, res.len());
                     outputs.insert(id, res);
                 }
                 if has_handoff {
@@ -426,6 +450,21 @@ pub async fn chat(
             }
 
             ui.note("↻ feeding tool results back, continuing loop …");
+
+            if let Some(resume_id) = crate::invoke::take_resume_session() {
+                let _ = session.save();
+                match Session::load(&resume_id) {
+                    Ok(loaded) => {
+                        session = loaded;
+                        runner.messages_mut().retain(|m| m.role == crate::types::Role::System);
+                        for msg in &session.messages {
+                            runner.push(msg.clone());
+                        }
+                        ui.note(format!("↩ resumed session {} ({} messages)", &resume_id[..8], session.messages.len()).as_str());
+                    }
+                    Err(e) => ui.err(format!("failed to resume: {e}").as_str()),
+                }
+            }
         }
         session.save()?;
         ui.ok("turn complete");
@@ -455,16 +494,6 @@ fn compact_args(args: &serde_json::Value) -> String {
             parts.join(", ")
         }
         other => other.to_string(),
-    }
-}
-
-fn pretty_bytes(n: usize) -> String {
-    if n < 1024 {
-        format!("{n} B")
-    } else if n < 1024 * 1024 {
-        format!("{:.1} KB", n as f64 / 1024.0)
-    } else {
-        format!("{:.1} MB", n as f64 / (1024.0 * 1024.0))
     }
 }
 

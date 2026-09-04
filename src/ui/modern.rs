@@ -25,26 +25,26 @@ impl Modern {
 
     pub fn status(&mut self, msg: &str) {
         self.clear_status();
-        print!("\r\x1b[2K{}", format!("· {msg}").dimmed());
+        print!("\r\x1b[2K{}", format!("· {msg}").bright_black());
         self.has_status = true;
         flush();
     }
 
     pub fn ok(&mut self, msg: &str) {
         self.clear_status();
-        println!("{} {msg}", "✓".dimmed());
+        println!("{} {msg}", "✓".green());
         flush();
     }
 
     pub fn err(&mut self, msg: &str) {
         self.clear_status();
-        println!("{} {msg}", "✗".dimmed().red());
+        println!("{} {msg}", "✗".red());
         flush();
     }
 
     pub fn note(&mut self, msg: &str) {
         self.clear_status();
-        println!("{}", msg.dimmed());
+        println!("{}", msg.bright_black());
         flush();
     }
 
@@ -58,6 +58,34 @@ impl Modern {
                 self.reason_dirty = true;
             }
         }
+    }
+
+    pub fn tool_call(&mut self, calls_summary: &str) {
+        self.clear_status();
+        self.end_line();
+        println!("{} {}", "▸".bright_cyan(), calls_summary.bright_black());
+        flush();
+    }
+
+    pub fn tool_result(&mut self, name: &str, preview: &str, byte_len: usize) {
+        self.clear_status();
+        if byte_len > 500 {
+            println!(
+                "{} {} ({} B): {} …",
+                "▾".bright_black(),
+                name.bright_black(),
+                byte_len,
+                preview.bright_black()
+            );
+        } else {
+            println!(
+                "{} {}: {}",
+                "▾".bright_black(),
+                name.bright_black(),
+                preview.bright_black()
+            );
+        }
+        flush();
     }
 
     pub fn text(&mut self, text: &str) {
@@ -95,9 +123,38 @@ impl Modern {
         flush();
     }
 
+    pub fn confirm(&mut self, msg: &str) -> char {
+        self.clear_status();
+        print!("\r\x1b[2K· {msg} [y/n/a] ");
+        flush();
+        let ch = crate::term::read_key();
+        let label = match ch {
+            'y' | 'Y' => "yes",
+            'n' | 'N' => "no",
+            'a' | 'A' => "always",
+            '?' => "?",
+            _ => "?",
+        };
+        print!("\r\x1b[2K· {msg} [{label}]");
+        flush();
+        ch.to_ascii_lowercase()
+    }
+
+    fn end_line(&mut self) {
+        if self.mark_printed {
+            print!("\n");
+            self.mark_printed = false;
+            flush();
+        }
+    }
+
     fn flush_reason(&mut self) {
         if !self.reason.is_empty() {
-            println!("{}", self.reason.dimmed().italic());
+            println!(
+                "{} {}",
+                "Thought:".bright_black().italic(),
+                self.reason.bright_black().italic()
+            );
         }
         self.reason.clear();
         self.reason_dirty = false;

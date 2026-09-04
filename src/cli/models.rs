@@ -19,7 +19,7 @@ pub async fn models(provider: Option<String>) -> anyhow::Result<()> {
 
     if cfg.providers.is_empty() {
         println!("no providers configured");
-        println!("edit ~/.config/zakhar/config.toml");
+        println!("edit ~/.zakhar/config/config.toml");
     }
     Ok(())
 }

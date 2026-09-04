@@ -10,6 +10,7 @@ use crate::types::Tool;
 static PERMIT: AtomicBool = AtomicBool::new(false);
 static MODELS: OnceLock<Vec<String>> = OnceLock::new();
 static CHAT: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+static RESUME: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 
 pub fn seed_models(models: Vec<String>) {
     let _ = MODELS.set(models);
@@ -33,6 +34,16 @@ pub fn chat_message() -> Option<String> {
     cell.lock().unwrap().take()
 }
 
+pub fn resume_session(id: String) {
+    let cell = RESUME.get_or_init(|| Mutex::new(None));
+    *cell.lock().unwrap() = Some(id);
+}
+
+pub fn take_resume_session() -> Option<String> {
+    let cell = RESUME.get_or_init(|| Mutex::new(None));
+    cell.lock().unwrap().take()
+}
+
 pub fn models() -> anyhow::Result<String> {
     match MODELS.get() {
         Some(m) if !m.is_empty() => Ok(format!("available models:\n{}", m.join("\n"))),
@@ -42,7 +53,7 @@ pub fn models() -> anyhow::Result<String> {
 
 pub const READONLY: &[&str] = &[
     "read", "glob", "grep", "ask", "todo", "task", "skill", "control", "context", "slash",
-    "delegate", "handoff",
+    "delegate", "handoff", "session", "search", "fetch",
 ];
 
 pub struct Invoke {

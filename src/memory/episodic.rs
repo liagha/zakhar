@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 const CAP: usize = 500;
 const ROLL: usize = 100;
+const TEXT_MAX: usize = 300;
 
 fn path() -> PathBuf {
     if let Some(p) = crate::memory::override_path() {
@@ -25,22 +26,31 @@ pub struct Event {
     pub text: String,
 }
 
-pub fn append(kind: &str, text: &str) -> anyhow::Result<()> {
+/// Append an event. Returns the archived chunk if compaction was triggered.
+pub fn append(kind: &str, text: &str) -> anyhow::Result<Vec<Event>> {
     let path = path();
     let dir = path.parent().unwrap_or_else(|| std::path::Path::new("."));
     std::fs::create_dir_all(dir)?;
+    let trimmed = text.trim();
+    let stored = if trimmed.len() > TEXT_MAX {
+        let truncated: String = trimmed.chars().take(TEXT_MAX).collect();
+        format!("{truncated}…")
+    } else {
+        trimmed.to_string()
+    };
     let event = Event {
         ts: Utc::now().to_rfc3339(),
         kind: kind.to_string(),
-        text: text.to_string(),
+        text: stored,
     };
     let line = serde_json::to_string(&event)?;
     let mut file = std::fs::OpenOptions::new().create(true).append(true).open(&path)?;
     writeln!(file, "{line}")?;
     if read().len() > CAP {
-        compact()?;
+        compact()
+    } else {
+        Ok(Vec::new())
     }
-    Ok(())
 }
 
 fn read() -> Vec<Event> {
@@ -73,11 +83,17 @@ pub fn block(n: usize) -> String {
     out
 }
 
-pub fn compact() -> anyhow::Result<String> {
+pub fn recent_json(n: usize) -> String {
+    serde_json::to_string(&recent(n)).unwrap_or_else(|_| "[]".to_string())
+}
+
+/// Raw archival: move oldest events to archive file, keep ROLL newest.
+/// Returns the archived chunk (empty if nothing was archived).
+pub fn compact() -> anyhow::Result<Vec<Event>> {
     let path = path();
     let events = read();
     if events.len() <= ROLL {
-        return Ok(format!("only {} events, nothing to compact", events.len()));
+        return Ok(Vec::new());
     }
     let chunk: Vec<Event> = events[..events.len() - ROLL].to_vec();
     let kept: Vec<Event> = events[events.len() - ROLL..].to_vec();
@@ -125,12 +141,82 @@ pub fn compact() -> anyhow::Result<String> {
         .open(&notes)?;
     writeln!(notes_file, "{out}")?;
 
-    Ok(format!(
-        "archived {} events to {}, kept {}",
-        chunk.len(),
-        archive.display(),
-        kept.len()
-    ))
+    Ok(chunk)
+}
+
+/// Async LLM summarisation: call the model to distill a chunk of archived
+/// events into a concise prose summary, then append it to NOTES.md.
+pub async fn summarize_compaction(
+    provider: &dyn crate::provider::Provider,
+    model: &str,
+    events: &[Event],
+) -> anyhow::Result<String> {
+    if events.is_empty() {
+        return Ok("no events to summarise".to_string());
+    }
+
+    // Build a compact representation of the events for the LLM
+    let event_lines: Vec<String> = events
+        .iter()
+        .map(|e| format!("[{}] {}: {}", e.ts, e.kind, e.text))
+        .collect();
+    let event_text = event_lines.join("\n");
+
+    let request = crate::types::ChatRequest {
+        model: model.to_string(),
+        messages: vec![
+            crate::types::Message::system(
+                "You are a memory summarisation assistant. You will receive a batch of \
+                 chronological events from a user's work session. Distill them into a \
+                 concise, human-readable prose summary (3-6 sentences). Focus on what \
+                 was done, what was decided, and what the outcome was. Use clear, \
+                 natural language. Do not include raw timestamps or JSON.".to_string(),
+            ),
+            crate::types::Message::user(format!(
+                "Summarise these {} events:\n\n{}",
+                events.len(),
+                event_text
+            )),
+        ],
+        temperature: Some(0.3),
+        max_tokens: Some(512),
+        stream: Some(false),
+        tools: None,
+    };
+
+    let mut stream = provider.chat_stream(request).await?;
+
+    // Collect the full response (non-streaming, but still arrives as deltas)
+    let mut summary = String::new();
+    while let Some(event) = futures::StreamExt::next(&mut stream).await {
+        match event? {
+            crate::provider::ChatStreamEvent::Text(t) => summary.push_str(&t),
+            crate::provider::ChatStreamEvent::Done => break,
+            _ => {}
+        }
+    }
+
+    if summary.trim().is_empty() {
+        anyhow::bail!("LLM returned empty summary");
+    }
+
+    let summary = summary.trim().to_string();
+
+    // Append the LLM summary to NOTES.md
+    let dir = parent_dir(&path());
+    let notes = dir
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("NOTES.md");
+    let stamp = Utc::now().format("%Y-%m-%d %H:%M");
+    let entry = format!("\n## Summary @ {stamp} ({} events)\n{}\n", events.len(), summary);
+    let mut notes_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&notes)?;
+    writeln!(notes_file, "{entry}")?;
+
+    Ok(summary)
 }
 
 #[cfg(test)]
@@ -176,10 +262,11 @@ mod tests {
         }
         let events = read();
         assert_eq!(events.len(), CAP);
-        append("note", "trigger").unwrap();
+        let archived = append("note", "trigger").unwrap();
+        assert!(!archived.is_empty(), "compaction should have triggered");
         let events = read();
         assert_eq!(events.len(), ROLL);
-        assert_eq!(events[0].text, "n401");
+        assert!(events.first().map(|e| e.text == "n401").unwrap_or(false));
     }
 
     #[test]
@@ -194,18 +281,18 @@ mod tests {
         for i in 0..ROLL + 20 {
             append("note", &format!("n{i}")).unwrap();
         }
-        let out = compact().unwrap();
-        assert!(out.contains("archived"));
-        let events = read();
-        assert_eq!(events.len(), ROLL);
-        assert!(events.first().map(|e| e.text == "n20").unwrap_or(false));
+        let events = compact().unwrap();
+        assert_eq!(events.len(), 20);
+        let kept = read();
+        assert_eq!(kept.len(), ROLL);
+        assert!(kept.first().map(|e| e.text == "n20").unwrap_or(false));
     }
 
     #[test]
     fn compact_noop_below_threshold() {
         let _g = tmp_store();
         append("note", "solo").unwrap();
-        let out = compact().unwrap();
-        assert!(out.contains("nothing to compact"));
+        let events = compact().unwrap();
+        assert!(events.is_empty());
     }
 }

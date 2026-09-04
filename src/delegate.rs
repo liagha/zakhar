@@ -13,6 +13,55 @@ use crate::types::{Function, Message, Tool, ToolCall};
 
 const MAX_DEPTH: usize = 3;
 const MAX_TURNS: usize = 8;
+const MAX_RETRY: usize = 2;
+
+fn exec_with_retry(invoke: &Invoke, name: &str, args: &Value) -> String {
+    let out = invoke.exec(name, args);
+    if !out.starts_with("error:") || name != "edit" {
+        return out;
+    }
+    let mut attempts = 0;
+    let mut current = out;
+    while current.starts_with("error:") && attempts < MAX_RETRY {
+        match edit_retry(args, &current) {
+            EditRetry::Ok(out) => return out,
+            EditRetry::Retry => {
+                println!("{}", format!("{} {}", "↺ retry".bold(), "old_string now matches".dimmed()));
+                current = invoke.exec(name, args);
+            }
+            EditRetry::Boosted(out) => {
+                println!("{}", format!("{} {}", "↻ context".bold(), "attached file content to error".dimmed()));
+                return out;
+            }
+        }
+        attempts += 1;
+    }
+    current
+}
+
+enum EditRetry {
+    Ok(String),
+    Retry,
+    Boosted(String),
+}
+
+/// Decide how to recover from a failed edit call.
+fn edit_retry(args: &Value, err: &str) -> EditRetry {
+    let Some(path) = args.get("path").and_then(|v| v.as_str()) else {
+        return EditRetry::Ok(err.to_string());
+    };
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return EditRetry::Ok(err.to_string()),
+    };
+    let old = args.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
+    if content.contains(old) {
+        return EditRetry::Retry;
+    }
+    let snippet: String = content.chars().take(700).collect();
+    let boosted = format!("{err}\n--- actual content of {path} (first 700 chars) ---\n{snippet}\n---");
+    EditRetry::Boosted(boosted)
+}
 
 pub fn tool_def(cfg: &Config) -> Tool {
     let agents: Vec<String> = cfg.agents.keys().cloned().collect();
@@ -351,7 +400,7 @@ pub async fn run(
             } else {
                 println!("{}", format!("{prefix} → invoke({}) …", tc.name).dimmed());
                 std::io::Write::flush(&mut std::io::stdout()).ok();
-                let out = invoke.exec(&tc.name, &tc.arguments);
+                let out = exec_with_retry(&invoke, &tc.name, &tc.arguments);
                 let preview = truncate(&out, 300);
                 println!("{}", format!("{prefix} ✓ {}({})", tc.name, preview).dimmed());
                 std::io::Write::flush(&mut std::io::stdout()).ok();
@@ -444,4 +493,40 @@ struct ToolCallPartAccum {
     id: String,
     name: String,
     arguments: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn edit_retry_matches_retries() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("f.txt");
+        std::fs::write(&p, "hello world").unwrap();
+        let args = json!({"path": p.to_str().unwrap(), "old_string": "hello", "new_string": "hi"});
+        assert!(matches!(edit_retry(&args, "error: x"), EditRetry::Retry));
+    }
+
+    #[test]
+    fn edit_retry_mismatch_boosts() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("f.txt");
+        std::fs::write(&p, "actual content").unwrap();
+        let args = json!({"path": p.to_str().unwrap(), "old_string": "something else", "new_string": "x"});
+        match edit_retry(&args, "error: old_string not found") {
+            EditRetry::Boosted(out) => assert!(out.contains("actual content")),
+            _ => panic!("expected boosted"),
+        }
+    }
+
+    #[test]
+    fn edit_retry_missing_file_passthrough() {
+        let args = json!({"path": "/no/such/path.txt", "old_string": "a", "new_string": "b"});
+        match edit_retry(&args, "error: no such file") {
+            EditRetry::Ok(out) => assert!(out.starts_with("error:")),
+            _ => panic!("expected passthrough"),
+        }
+    }
 }

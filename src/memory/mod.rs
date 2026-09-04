@@ -29,6 +29,11 @@ pub fn load_blocks() -> Vec<(String, String)> {
         blocks.push(("profile".to_string(), text));
     }
 
+    let past = crate::session::summarize(5);
+    if !past.is_empty() {
+        blocks.push(("past work".to_string(), past));
+    }
+
     let recent = episodic::block(10);
     if recent != "no recent events" {
         blocks.push(("recent".to_string(), recent));
@@ -52,15 +57,13 @@ pub fn load_blocks() -> Vec<(String, String)> {
             println!("[memory] loaded {name} ({} bytes)", text.len());
         }
     }
-    if let Some(home) = dirs::config_dir() {
-        let p = home.join("zakhar/memory.md");
-        if p.exists()
-            && let Ok(text) = std::fs::read_to_string(&p)
-            && !text.trim().is_empty()
-        {
-            parts.push(format!("--- config/memory.md ---\n{text}"));
-            println!("[memory] loaded {} ({} bytes)", p.display(), text.len());
-        }
+    let p = crate::paths::config_dir().join("memory.md");
+    if p.exists()
+        && let Ok(text) = std::fs::read_to_string(&p)
+        && !text.trim().is_empty()
+    {
+        parts.push(format!("--- config/memory.md ---\n{text}"));
+        println!("[memory] loaded {} ({} bytes)", p.display(), text.len());
     }
     if !parts.is_empty() {
         blocks.push(("memory".to_string(), parts.join("\n\n")));
@@ -92,14 +95,17 @@ mod tests {
         std::fs::create_dir_all(".zakhar").unwrap();
         std::fs::write(".zakhar/MEMORY.md", "static bytes").unwrap();
         episodic::append("note", "hello").unwrap();
-        let blocks = load_blocks();
-        let labels: Vec<&str> = blocks.iter().map(|(l, _)| l.as_str()).collect();
-        let recent = labels.iter().position(|l| *l == "recent");
-        let memory = labels.iter().position(|l| *l == "memory");
-        match (recent, memory) {
-            (Some(r), Some(m)) => assert!(r < m, "recent must precede memory: {labels:?}"),
-            _ => {}
-        }
-        std::env::set_current_dir(&orig).unwrap();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let blocks = load_blocks();
+            let labels: Vec<&str> = blocks.iter().map(|(l, _)| l.as_str()).collect();
+            let recent = labels.iter().position(|l| *l == "recent");
+            let memory = labels.iter().position(|l| *l == "memory");
+            match (recent, memory) {
+                (Some(r), Some(m)) => assert!(r < m, "recent must precede memory: {labels:?}"),
+                _ => {}
+            }
+        }));
+        let _ = std::env::set_current_dir(&orig);
+        result.unwrap();
     }
 }

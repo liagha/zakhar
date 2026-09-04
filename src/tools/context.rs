@@ -40,6 +40,30 @@ fn def(name: &str, description: &str, parameters: Value) -> Tool {
 struct Entry {
     value: String,
     updated: String,
+    #[serde(default)]
+    accessed_at: String,
+    #[serde(default)]
+    access_count: u64,
+    #[serde(default)]
+    source: String,
+}
+
+impl Entry {
+    fn new(value: String) -> Self {
+        let now = Utc::now().to_rfc3339();
+        Self {
+            value,
+            updated: now.clone(),
+            accessed_at: now,
+            access_count: 0,
+            source: String::new(),
+        }
+    }
+
+    fn bump_access(&mut self) {
+        self.accessed_at = Utc::now().to_rfc3339();
+        self.access_count += 1;
+    }
 }
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -58,7 +82,9 @@ fn save(store: &Store) -> anyhow::Result<()> {
     let path = path();
     let dir = path.parent().unwrap_or_else(|| std::path::Path::new("."));
     std::fs::create_dir_all(dir)?;
-    std::fs::write(path, serde_json::to_string_pretty(store)?)?;
+    let tmp = dir.join(format!(".context.{}.tmp", std::process::id()));
+    std::fs::write(&tmp, serde_json::to_string_pretty(store)?)?;
+    std::fs::rename(&tmp, &path)?;
     Ok(())
 }
 
@@ -70,13 +96,31 @@ pub fn index() -> String {
     let mut out = String::from("saved context keys:\n");
     for (key, entry) in &store.entries {
         let preview: String = entry.value.chars().take(60).collect();
-        out.push_str(&format!("- {key}: {preview}{} (updated {})\n", if entry.value.chars().count() > 60 { "…" } else { "" }, entry.updated));
+        let ellipsis = if entry.value.chars().count() > 60 { "…" } else { "" };
+        let access_info = if entry.access_count > 0 {
+            format!(" (accessed {}×, last {})", entry.access_count, entry.accessed_at)
+        } else {
+            String::new()
+        };
+        let source_info = if entry.source.is_empty() {
+            String::new()
+        } else {
+            format!(" [source: {}]", entry.source)
+        };
+        out.push_str(&format!(
+            "- {key}: {preview}{ellipsis} (updated {}){}{}\n",
+            entry.updated, access_info, source_info
+        ));
     }
     out
 }
 
 pub fn keys() -> Vec<String> {
     load().entries.into_keys().collect()
+}
+
+pub fn context_keys() -> String {
+    serde_json::to_string(&keys()).unwrap_or_else(|_| "[]".to_string())
 }
 
 pub fn value(key: &str) -> Option<String> {
@@ -100,22 +144,48 @@ pub fn recall(query: &str, top: usize) -> Vec<(String, String)> {
         return Vec::new();
     }
     let store = load();
-    let mut scored: Vec<(usize, String, String)> = store
+    let mut scored: Vec<(f64, String, String)> = store
         .entries
         .iter()
         .map(|(key, entry)| {
+            // Keyword score (base)
             let hay = format!("{key} {}", entry.value).to_lowercase();
-            let score = terms.iter().filter(|t| hay.contains(**t)).count();
-            (score, key.clone(), entry.value.clone())
+            let keyword_score = terms.iter().filter(|t| hay.contains(**t)).count() as f64;
+
+            // Recency score: 0.0–1.0, decays over ~7 days
+            let recency = parse_rfc3339_age_hours(&entry.accessed_at).map_or(1.0, |hours| {
+                let half_life: f64 = 168.0; // 7 days
+                (-(hours.ln()) / (half_life.ln())).max(0.0).min(1.0)
+            });
+
+            // Frequency score: 0.0–1.0, logarithmic scale
+            let freq = if entry.access_count == 0 {
+                0.25 // default for never-accessed entries
+            } else {
+                let log = (entry.access_count as f64).ln();
+                (log / 10.0).min(1.0) // ln(10000) ≈ 9.2, so cap near there
+            };
+
+            // Combined: keyword is primary, recency and frequency are boosts
+            let combined = keyword_score * (1.0 + 0.3 * recency + 0.2 * freq);
+
+            (combined, key.clone(), entry.value.clone())
         })
         .collect();
-    scored.sort_by_key(|(s, _, _)| std::cmp::Reverse(*s));
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
     scored
         .into_iter()
-        .filter(|(s, _, _)| *s > 0)
+        .filter(|(s, _, _)| *s > 0.0)
         .take(top)
         .map(|(_, k, v)| (k, v))
         .collect()
+}
+
+/// Parse an RFC 3339 timestamp and return age in hours, or None if unparseable.
+fn parse_rfc3339_age_hours(ts: &str) -> Option<f64> {
+    let parsed = chrono::DateTime::parse_from_rfc3339(ts).ok()?;
+    let age = Utc::now().signed_duration_since(parsed);
+    Some(age.num_seconds() as f64 / 3600.0)
 }
 
 pub struct Context;
@@ -127,6 +197,7 @@ impl Handler for Context {
                 "action": { "type": "string", "enum": ["save", "get", "list", "drop", "recall"], "description": "What to do with context" },
                 "key": { "type": "string", "description": "Name of the entry (for save/get/drop)" },
                 "value": { "type": "string", "description": "Content to store (only for action=save)" },
+                "source": { "type": "string", "description": "Where this fact came from (for action=save), e.g. 'conversation', 'file:README.md', 'tool:git log'" },
                 "query": { "type": "string", "description": "Search text (only for action=recall)" },
                 "top": { "type": "integer", "description": "Max results for recall (default 5)" }
             },
@@ -138,14 +209,25 @@ impl Handler for Context {
             "save" => {
                 let key = args.get("key").and_then(|v| v.as_str()).unwrap_or("");
                 let value = args.get("value").and_then(|v| v.as_str()).unwrap_or("");
+                let source = args.get("source").and_then(|v| v.as_str()).unwrap_or("");
                 if key.is_empty() {
                     anyhow::bail!("missing key");
                 }
                 let mut store = load();
-                store.entries.insert(
-                    key.to_string(),
-                    Entry { value: value.to_string(), updated: Utc::now().to_rfc3339() },
-                );
+                let is_update = store.entries.contains_key(key);
+                let mut entry = Entry::new(value.to_string());
+                entry.source = source.to_string();
+                if is_update {
+                    if let Some(existing) = store.entries.get(key) {
+                        entry.access_count = existing.access_count;
+                        entry.accessed_at = existing.accessed_at.clone();
+                        if existing.source.is_empty() || source.is_empty() {
+                            entry.source = existing.source.clone();
+                        }
+                    }
+                    entry.bump_access();
+                }
+                store.entries.insert(key.to_string(), entry);
                 save(&store)?;
                 Ok(format!("saved context key '{key}' ({} bytes)", value.len()))
             }
@@ -154,9 +236,14 @@ impl Handler for Context {
                 if key.is_empty() {
                     anyhow::bail!("missing key");
                 }
-                let store = load();
-                match store.entries.get(key) {
-                    Some(entry) => Ok(entry.value.clone()),
+                let mut store = load();
+                match store.entries.get_mut(key) {
+                    Some(entry) => {
+                        entry.bump_access();
+                        let val = entry.value.clone();
+                        save(&store).ok();
+                        Ok(val)
+                    }
                     None => Ok(format!("context lookup: no key '{key}' saved yet. Treat this as 'not in stored memory' — do NOT say you have nothing or ask for the value if the user just provided it; use what the user said in the conversation.")),
                 }
             }

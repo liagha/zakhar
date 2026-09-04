@@ -54,6 +54,20 @@ impl Ui {
         }
     }
 
+    pub fn tool_call(&mut self, calls_summary: &str) {
+        match self {
+            Ui::Simple(u) => u.tool_call(calls_summary),
+            Ui::Modern(u) => u.tool_call(calls_summary),
+        }
+    }
+
+    pub fn tool_result(&mut self, name: &str, preview: &str, byte_len: usize) {
+        match self {
+            Ui::Simple(u) => u.tool_result(name, preview, byte_len),
+            Ui::Modern(u) => u.tool_result(name, preview, byte_len),
+        }
+    }
+
     pub fn text(&mut self, text: &str) {
         match self {
             Ui::Simple(u) => u.text(text),
@@ -72,6 +86,13 @@ impl Ui {
         match self {
             Ui::Simple(u) => u.prompt(),
             Ui::Modern(u) => u.prompt(),
+        }
+    }
+
+    pub fn confirm(&mut self, msg: &str) -> char {
+        match self {
+            Ui::Simple(u) => u.confirm(msg),
+            Ui::Modern(u) => u.confirm(msg),
         }
     }
 }

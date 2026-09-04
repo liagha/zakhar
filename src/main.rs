@@ -1,15 +1,15 @@
-use zakhar::cli::{chat, models, shout};
+use zakhar::cli::{chat, clean, daemon, models, remind, shout};
 
 use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::Shell;
 
 #[derive(Parser)]
 #[command(name = "zakhar", version, about)]
 struct Cli {
-    /// free-text command, e.g. `zakhar search here`, `zakhar delete the logs`
-    #[arg(trailing_var_arg = true)]
-    words: Vec<String>,
     #[command(subcommand)]
     command: Option<Command>,
+    /// free-text command, e.g. `zakhar search here`, `zakhar delete the logs`
+    words: Vec<String>,
 }
 
 #[derive(Subcommand)]
@@ -33,6 +33,19 @@ enum Command {
     Models {
         provider: Option<String>,
     },
+    Completion {
+        #[arg(value_enum)]
+        shell: Shell,
+    },
+    Remind {
+        /// The reminder phrase, e.g. "9am to buy that stock". Omit to list.
+        phrase: Vec<String>,
+    },
+    Daemon,
+    /// Show every path zakhar writes to (its single ~/.zakhar home).
+    Paths,
+    /// Permanently delete everything zakhar stores in ~/.zakhar.
+    Clean,
 }
 
 #[tokio::main]
@@ -45,6 +58,14 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let cli = Cli::parse();
+
+    if !matches!(
+        cli.command,
+        Some(Command::Paths) | Some(Command::Clean) | Some(Command::Completion { .. })
+    ) {
+        zakhar::migrate::run();
+    }
+
     match (cli.command, cli.words) {
         (Some(Command::Chat {
             provider,
@@ -59,6 +80,21 @@ async fn main() -> anyhow::Result<()> {
                 .await?
         }
         (Some(Command::Models { provider }), _) => models(provider).await?,
+        (Some(Command::Completion { shell }), _) => {
+            let mut cmd = Cli::command();
+            clap_complete::generate(shell, &mut cmd, "zakhar", &mut std::io::stdout());
+        }
+        (Some(Command::Remind { phrase }), _) => {
+            let text = if phrase.is_empty() {
+                None
+            } else {
+                Some(phrase.join(" "))
+            };
+            remind::run(text).await?
+        }
+        (Some(Command::Daemon), _) => daemon::run().await?,
+        (Some(Command::Paths), _) => clean::paths_cmd(),
+        (Some(Command::Clean), _) => clean::clean_cmd()?,
         (None, words) if !words.is_empty() => {
             shout(words.join(" ")).await?;
         }

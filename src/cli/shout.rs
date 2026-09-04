@@ -27,7 +27,7 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
     crate::invoke::seed_models(p.list_models());
 
     let inv = Invoke::new();
-    let mut runner = Runner::new(p, model, None);
+    let mut runner = Runner::new(p, model.clone(), None);
 
     runner.push(crate::types::Message::system(
          "You are zakhar, a mate who does quick file/terminal chores from a single short phrase. \
@@ -68,8 +68,24 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
     let mut session = Session::new();
     let text = run_tool_loop(&mut ui, &mut runner, &cfg, &inv, p, &mut session).await?;
 
-    if let Err(e) = crate::memory::episodic::append("phrase", &text) {
-        println!("[memory] failed to log event: {e}");
+    match crate::memory::episodic::append("phrase", &text) {
+        Ok(events) if !events.is_empty() => {
+            let pid = provider_id.clone();
+            let mdl = model.clone();
+            let cfg2 = cfg.clone();
+            tokio::spawn(async move {
+                let reg = crate::registry::build(&cfg2);
+                if let Some(prov) = reg.get(&pid) {
+                    if let Err(e) = crate::memory::episodic::summarize_compaction(prov, &mdl, &events).await {
+                        println!("[memory] compaction summary failed: {e}");
+                    }
+                }
+            });
+        }
+        Err(e) => {
+            println!("[memory] failed to log event: {e}");
+        }
+        _ => {}
     }
 
     if let Some(seed) = crate::invoke::chat_message() {
@@ -155,14 +171,21 @@ async fn run_tool_loop(
         let mut delegate_ids: Vec<String> = Vec::new();
         let mut delegate_kinds: Vec<String> = Vec::new();
 
+        let mut allow_all = false;
         for tc in &tool_calls {
-            let approved = if !is_mutating(&tc.name) || crate::invoke::permitted() {
+            let approved = if !is_mutating(&tc.name) || allow_all || crate::invoke::permitted() {
                 true
             } else {
-                ui.status(format!("confirm {}? [y/n]", tc.name).as_str());
-                let mut resp = String::new();
-                std::io::stdin().read_line(&mut resp)?;
-                !matches!(resp.trim().to_lowercase().as_str(), "n" | "no")
+                let ch = ui.confirm(&format!("{}?", tc.name));
+                match ch {
+                    'a' => {
+                        crate::invoke::grant();
+                        allow_all = true;
+                        true
+                    }
+                    'n' => false,
+                    _ => true,
+                }
             };
 
             if !approved {

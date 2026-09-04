@@ -88,8 +88,9 @@ mod tests {
     fn with_cwd(dir: &std::path::Path, f: impl FnOnce()) {
         let orig = std::env::current_dir().unwrap();
         std::env::set_current_dir(dir).unwrap();
-        f();
-        std::env::set_current_dir(&orig).unwrap();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+        let _ = std::env::set_current_dir(&orig);
+        result.unwrap();
     }
 
     #[test]

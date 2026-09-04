@@ -3,7 +3,7 @@ use serde_json::json;
 use crate::types::Tool;
 
 pub fn tool_def() -> Tool {
-    let mut available = vec!["/clear", "/compact", "/init", "/help", "/agents", "/skills", "/memory"];
+    let mut available = vec!["/clear", "/compact", "/init", "/help", "/agents", "/skills", "/memory", "/sessions", "/resume", "/kill"];
     // discover custom commands
     for dir in [".opencode/commands", ".zakhar/commands", "commands"] {
         if let Ok(entries) = std::fs::read_dir(dir) {
@@ -105,6 +105,7 @@ fn dispatch(cmd: &str, args: &str, session: &mut crate::session::Session, runner
                 Err(e) => format!("error creating {path}: {e}"),
             }
         }
+        "/kill" => kill_tasks(args),
         "/help" => {
             let mut out = String::new();
             out.push_str("slash commands (user: type /cmd, AI: call slash tool):\n");
@@ -115,6 +116,10 @@ fn dispatch(cmd: &str, args: &str, session: &mut crate::session::Session, runner
             out.push_str("  /agents - list agents\n");
             out.push_str("  /skills - list skills (same as skill tool)\n");
             out.push_str("  /memory - browse/search/drop/compact memory\n");
+            out.push_str("  /sessions - list saved sessions\n");
+            out.push_str("  /resume <id> - resume a previous session\n");
+            out.push_str("  /kill - kill all background tasks\n");
+            out.push_str("  /kill <id> [...] - kill specific task(s)\n");
             // custom
             for dir in [".opencode/commands", ".zakhar/commands"] {
                 if let Ok(entries) = std::fs::read_dir(dir) {
@@ -158,6 +163,21 @@ fn dispatch(cmd: &str, args: &str, session: &mut crate::session::Session, runner
             }
         }
         "/memory" => memory(args),
+        "/sessions" => crate::session::list_formatted(),
+        "/resume" => {
+            if args.is_empty() {
+                return "usage: /resume <id-prefix>".to_string();
+            }
+            let sessions = crate::session::list();
+            let matched = sessions.iter().find(|s| s.id.starts_with(args));
+            match matched {
+                Some(s) => {
+                    crate::invoke::resume_session(s.id.clone());
+                    format!("resuming session {} (created {}, {} messages)", &s.id[..8], s.created_at, s.message_count)
+                }
+                None => format!("no session matches '{args}'"),
+            }
+        }
         _ => {
             // try custom slash file
             let name = cmd.trim_start_matches('/');
@@ -210,10 +230,13 @@ fn memory(args: &str) -> String {
                 None => out.push_str(&format!("no context key '{rest}'")),
             }
         }
-        "compact" => match crate::memory::episodic::compact() {
-            Ok(msg) => out.push_str(&msg),
-            Err(e) => out.push_str(&format!("error: {e}")),
-        },
+        "compact" => {
+            match crate::memory::episodic::compact() {
+                Ok(events) if events.is_empty() => out.push_str("nothing to compact (below threshold)"),
+                Ok(events) => out.push_str(&format!("archived {} events", events.len())),
+                Err(e) => out.push_str(&format!("error: {e}")),
+            }
+        }
         "search" => {
             if rest.is_empty() {
                 return "usage: /memory search <text>".to_string();
@@ -244,4 +267,31 @@ fn memory(args: &str) -> String {
     }
 
     out
+}
+
+fn kill_tasks(args: &str) -> String {
+    use crate::handler::Handler;
+    use crate::tools::Task;
+    let task = Task;
+    let args = args.trim();
+    if args.is_empty() {
+        match task.run(&json!({"action": "kill", "kill": "all"})) {
+            Ok(out) => out,
+            Err(e) => format!("error: {e}"),
+        }
+    } else {
+        let ids: Vec<&str> = args.split_whitespace().collect();
+        if ids.len() == 1 {
+            match task.run(&json!({"action": "kill", "task_id": ids[0]})) {
+                Ok(out) => out,
+                Err(e) => format!("error: {e}"),
+            }
+        } else {
+            let id_vals: Vec<serde_json::Value> = ids.iter().map(|s| json!(s)).collect();
+            match task.run(&json!({"action": "kill", "task_ids": id_vals})) {
+                Ok(out) => out,
+                Err(e) => format!("error: {e}"),
+            }
+        }
+    }
 }

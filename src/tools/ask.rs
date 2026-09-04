@@ -1,4 +1,5 @@
 use std::io::Write as _;
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 use serde_json::{json, Value};
@@ -24,7 +25,49 @@ struct Item {
     priority: String,
 }
 
+fn todo_path() -> PathBuf {
+    PathBuf::from(".zakhar/todo.json")
+}
+
+fn load_todos() -> Vec<Item> {
+    std::fs::read_to_string(todo_path())
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+fn save_todos(items: &[Item]) -> anyhow::Result<()> {
+    let p = todo_path();
+    let dir = p.parent().unwrap_or_else(|| std::path::Path::new("."));
+    std::fs::create_dir_all(dir)?;
+    let tmp = dir.join(format!(".todo.{}.tmp", std::process::id()));
+    std::fs::write(&tmp, serde_json::to_string_pretty(items)?)?;
+    std::fs::rename(&tmp, &p)?;
+    Ok(())
+}
+
 static TODOS: OnceLock<Mutex<Vec<Item>>> = OnceLock::new();
+
+pub fn load_persisted_todos() -> String {
+    let items = load_todos();
+    if items.is_empty() {
+        return String::new();
+    }
+    let mutex = TODOS.get_or_init(|| Mutex::new(Vec::new()));
+    *mutex.lock().unwrap() = items.clone();
+    let mut out = String::new();
+    for t in &items {
+        let icon = match t.status.as_str() {
+            "pending" => "○",
+            "in_progress" => "●",
+            "completed" => "✓",
+            "cancelled" => "✗",
+            _ => "?",
+        };
+        out.push_str(&format!("  {} [{}] {} ({})\n", icon, t.status, t.content, t.priority));
+    }
+    out
+}
 
 pub struct Ask;
 impl Handler for Ask {
@@ -153,6 +196,7 @@ impl Handler for Todo {
         if in_progress > 1 {
             anyhow::bail!("only one task may be in_progress at a time, got {in_progress}");
         }
+        save_todos(&list)?;
         let mutex = TODOS.get_or_init(|| Mutex::new(Vec::new()));
         *mutex.lock().unwrap() = list.clone();
         let mut out = String::new();

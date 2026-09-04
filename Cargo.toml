@@ -9,16 +9,26 @@ license = "MIT"
 [lib]
 name = "zakhar"
 path = "src/lib.rs"
+# `lib` (rlib) for the CLI + desktop embedding, `cdylib` so the Android JNI
+# bridge can be packaged as a shared library.
+crate-type = ["lib", "cdylib"]
 
 [[bin]]
 name = "zakhar"
 path = "src/main.rs"
 
+[features]
+default = []
+# Enables the Android JNI bridge in src/android.rs and switches reqwest to
+# rustls so the core cross-compiles for Android without OpenSSL/native-tls.
+jni = ["dep:jni"]
+
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 clap = { version = "4", features = ["derive", "env"] }
 clap_complete = "4"
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls", "blocking"] }
+jni = { version = "0.21", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
@@ -40,6 +50,8 @@ uuid = { version = "1", features = ["v4"] }
 tempfile = "3"
 shellexpand = "3"
 glob = "0.3"
+libc = "0.2"
+urlencoding = "2"
 
 [dev-dependencies]
 assert_cmd = "2"

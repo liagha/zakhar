@@ -8,6 +8,8 @@
 //! produced from the same sources.
 
 pub mod agent;
+#[cfg(feature = "jni")]
+pub mod android;
 pub mod cli;
 pub mod config;
 pub mod delegate;
@@ -15,10 +17,14 @@ pub mod handler;
 pub mod hooks;
 pub mod invoke;
 pub mod memory;
+pub mod migrate;
+pub mod paths;
 pub mod provider;
 pub mod registry;
+pub mod reminder;
 pub mod session;
 pub mod slash;
+pub mod term;
 pub mod tools;
 pub mod types;
 pub mod ui;
