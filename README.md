@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.svg" width="128" alt="zakhar logo">
+</p>
+
 # zakhar
 
 Multi-agent CLI for working with AI coding models.
