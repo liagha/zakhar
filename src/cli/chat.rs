@@ -55,6 +55,11 @@ pub async fn chat(
         runner.push(crate::types::Message::system(format!("{label}:\n{text}")));
     }
 
+    runner.push(crate::types::Message::system(format!(
+        "Current UTC time: {}. Use this when scheduling reminders (remind tool) or interpreting relative times.",
+        chrono::Utc::now().to_rfc3339()
+    )));
+
     {
         let persisted = crate::tools::load_persisted_todos();
         if !persisted.is_empty() {

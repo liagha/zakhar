@@ -1,4 +1,4 @@
-use zakhar::cli::{chat, clean, daemon, models, remind, shout};
+use zakhar::cli::{chat, clean, daemon, models, shout};
 
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
@@ -36,10 +36,6 @@ enum Command {
     Completion {
         #[arg(value_enum)]
         shell: Shell,
-    },
-    Remind {
-        /// The reminder phrase, e.g. "9am to buy that stock". Omit to list.
-        phrase: Vec<String>,
     },
     Daemon,
     /// Show every path zakhar writes to (its single ~/.zakhar home).
@@ -83,14 +79,6 @@ async fn main() -> anyhow::Result<()> {
         (Some(Command::Completion { shell }), _) => {
             let mut cmd = Cli::command();
             clap_complete::generate(shell, &mut cmd, "zakhar", &mut std::io::stdout());
-        }
-        (Some(Command::Remind { phrase }), _) => {
-            let text = if phrase.is_empty() {
-                None
-            } else {
-                Some(phrase.join(" "))
-            };
-            remind::run(text).await?
         }
         (Some(Command::Daemon), _) => daemon::run().await?,
         (Some(Command::Paths), _) => clean::paths_cmd(),

@@ -45,6 +45,10 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
             "{label}:\n{text}"
         )));
     }
+    runner.push(crate::types::Message::system(format!(
+        "Current UTC time: {}. Use this when scheduling reminders (remind tool) or interpreting relative times.",
+        chrono::Utc::now().to_rfc3339()
+    )));
     let ctx = crate::tools::context_index();
     if ctx != "no saved context" {
         runner.push(crate::types::Message::system(format!(

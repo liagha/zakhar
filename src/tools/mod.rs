@@ -5,6 +5,7 @@ mod exec;
 pub(crate) use exec::Task;
 mod fetch;
 mod fs;
+mod remind;
 mod search;
 mod session;
 mod system;
@@ -26,6 +27,7 @@ pub fn all() -> Vec<Box<dyn Handler>> {
         Box::new(context::Context),
         Box::new(fetch::Fetch),
         Box::new(search::Search),
+        Box::new(remind::Remind),
         Box::new(session::SessionTool),
         Box::new(system::Skill),
         Box::new(system::Control),

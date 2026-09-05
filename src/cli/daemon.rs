@@ -1,11 +1,56 @@
+use std::process::Command;
+
 use crate::reminder;
+
+pub fn notify(message: &str) {
+    #[cfg(target_os = "linux")]
+    {
+        let _ = Command::new("notify-send")
+            .arg("zakhar")
+            .arg(message)
+            .status();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = Command::new("osascript")
+            .arg("-e")
+            .arg(format!("display notification \"{message}\" with title \"zakhar\""))
+            .status();
+    }
+}
+
+pub fn ensure_daemon() {
+    let exe = std::env::current_exe().ok();
+    let mut cmd = match exe {
+        Some(e) => Command::new(e),
+        None => return,
+    };
+    cmd.arg("daemon");
+    if std::env::var("ZAKHAR_NO_DAEMON").is_ok() {
+        return;
+    }
+    let already = Command::new("pgrep")
+        .arg("-f")
+        .arg("zakhar daemon")
+        .output()
+        .map(|o| !o.stdout.is_empty())
+        .unwrap_or(false);
+    if already {
+        return;
+    }
+    let _ = cmd
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .stdin(std::process::Stdio::null())
+        .spawn();
+}
 
 pub async fn run() -> anyhow::Result<()> {
     println!("zakhar daemon started (pid {})", std::process::id());
     loop {
         for r in reminder::due_and_due() {
             let msg = format!("⏰ {}", r.message);
-            super::remind::notify(&msg);
+            notify(&msg);
             println!("⏰ fired: {} — {}", r.id, r.message);
             if r.recurring.is_none() {
                 reminder::mark_done(&r.id);
