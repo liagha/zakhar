@@ -3,6 +3,11 @@ set -euo pipefail
 
 os="$(uname -s)"
 arch="$(uname -m)"
+termux=0
+
+if [ -n "${TERMUX_VERSION:-}" ] || [ "${PREFIX:-}" != "" ]; then
+    termux=1
+fi
 
 case "$os" in
     Linux) target="linux" ;;
@@ -15,6 +20,10 @@ case "$arch" in
     aarch64|arm64) target="${target}-aarch64" ;;
     *) echo "unsupported arch: $arch" >&2; exit 1 ;;
 esac
+
+if [ "$termux" = "1" ]; then
+    target="${target}-musl"
+fi
 
 dest="${ZAKHAR_INSTALL_DIR:-$HOME/.local/bin}"
 url="https://github.com/liagha/zakhar/releases/latest/download/zakhar-${target}"

@@ -20,6 +20,14 @@ jobs:
             rust: aarch64-unknown-linux-gnu
             asset: linux-aarch64
             linker: aarch64-linux-gnu-gcc
+          - os: ubuntu-latest
+            rust: x86_64-unknown-linux-musl
+            asset: linux-x86_64-musl
+            zigbuild: true
+          - os: ubuntu-latest
+            rust: aarch64-unknown-linux-musl
+            asset: linux-aarch64-musl
+            zigbuild: true
           - os: macos-latest
             rust: aarch64-apple-darwin
             asset: darwin-aarch64
@@ -39,7 +47,18 @@ jobs:
         if: matrix.linker != ''
         run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
 
+      - name: install zigbuild
+        if: matrix.zigbuild
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+
       - name: build
+        if: matrix.zigbuild
+        run: cargo zigbuild --release --target ${{ matrix.rust }}
+
+      - name: build
+        if: matrix.zigbuild != true
         run: cargo build --release --target ${{ matrix.rust }}
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.linker }}

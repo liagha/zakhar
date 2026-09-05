@@ -14,7 +14,7 @@ One line — downloads a prebuilt binary for your OS and arch (no Rust needed):
 curl -fsSL https://raw.githubusercontent.com/liagha/zakhar/master/install.sh | bash
 ```
 
-Installs the `zakhar` binary to `~/.local/bin/zakhar` (override with `ZAKHAR_INSTALL_DIR=/somewhere`). Make sure that directory is on your `PATH`. Linux (x86_64, aarch64) and macOS (x86_64, aarch64) are supported.
+Installs the `zakhar` binary to `~/.local/bin/zakhar` (override with `ZAKHAR_INSTALL_DIR=/somewhere`). Make sure that directory is on your `PATH`. Linux (x86_64, aarch64), macOS (x86_64, aarch64), and Termux on Android are supported — Termux gets a static build that doesn't depend on glibc.
 
 ## Set up a provider
 
