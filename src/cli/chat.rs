@@ -28,7 +28,7 @@ pub async fn chat(
     let registry = registry::build(&cfg);
     let mut ui = Ui::new(simple);
 
-    let heavy = crate::levels::resolve(&cfg, "heavy");
+    let heavy = crate::capabilities::resolve(&cfg, "code", "heavy");
     let provider_id = provider.unwrap_or(heavy.provider);
     let p = registry
         .get(&provider_id)

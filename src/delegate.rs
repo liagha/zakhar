@@ -176,10 +176,16 @@ pub async fn run(
 
     let model = if !agent_cfg.model.is_empty() {
         agent_cfg.model.clone()
-    } else if let Some(m) = &cfg.default_model {
-        m.clone()
     } else {
-        provider.list_models().first().cloned().unwrap_or_default()
+        let cap = crate::capabilities::detect(cfg, task);
+        let r = crate::capabilities::resolve(cfg, &cap, "heavy");
+        if !r.model.is_empty() {
+            r.model
+        } else if let Some(m) = &cfg.default_model {
+            m.clone()
+        } else {
+            provider.list_models().first().cloned().unwrap_or_default()
+        }
     };
 
     let prefix = format!("{}", "  ▸".dimmed());

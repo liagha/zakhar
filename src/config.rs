@@ -14,6 +14,8 @@ pub struct Config {
     #[serde(default)]
     pub levels: HashMap<String, Level>,
     #[serde(default)]
+    pub capabilities: HashMap<String, Capability>,
+    #[serde(default)]
     pub default_provider: Option<String>,
     #[serde(default)]
     pub default_model: Option<String>,
@@ -25,6 +27,16 @@ pub struct Level {
     pub provider: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Capability {
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub hints: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

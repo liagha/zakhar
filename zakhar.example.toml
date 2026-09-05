@@ -37,3 +37,21 @@ tools = ["read", "write", "edit", "bash", "glob", "grep", "delegate", "handoff"]
 model = "big-pickle"
 prompt = "You are the reviewer agent. You check code for bugs, style, and tests. Suggest concrete fixes."
 tools = ["read", "grep", "glob"]
+
+# Background/cheap tiers. Everything not otherwise routed falls back to
+# default_provider/default_model below.
+[levels.light]
+model = "deepseek-v4-flash-free"
+
+[levels.heavy]
+model = "big-pickle"
+
+# Task-type routing: hints match natural-language requests to a model.
+[capabilities.code]
+model = "big-pickle"
+hints = ["refactor", "compile", "debug", "function", "class", "module", "build"]
+
+[capabilities.vision]
+provider = "zen"
+model = "mimo-v2.5-free"
+hints = ["image", "photo", "screenshot", "picture", "diagram", "logo"]

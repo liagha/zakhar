@@ -40,6 +40,7 @@ fn cfg() -> Config {
         providers,
         agents: HashMap::new(),
         levels,
+        capabilities: HashMap::new(),
         default_provider: Some("zai".to_string()),
         default_model: Some("glm-4.7-flash".to_string()),
     }

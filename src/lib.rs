@@ -10,6 +10,7 @@
 pub mod agent;
 #[cfg(feature = "jni")]
 pub mod android;
+pub mod capabilities;
 pub mod cli;
 pub mod config;
 pub mod delegate;

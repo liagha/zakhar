@@ -111,6 +111,37 @@ user_agent = "opencode/1.18.25"
 models = ["big-pickle", "deepseek-v4-flash-free", "mimo-v2.5-free"]
 ```
 
+## Model routing
+
+Different jobs want different models. Two config sections control which
+provider+model a task goes to:
+
+- **`[levels.*]`** — weight tiers. `light` is used by background/cheap work
+  (compaction, memory summarization), `heavy` by interactive sessions
+  (`zakhar chat`, `zakhar mobile`).
+- **`[capabilities.*]`** — task-type routing. Each capability names a
+  (provider, model) plus keyword `hints`. When a task is phrased in natural
+  language, the hints pick a capability; e.g. anything mentioning an image,
+  photo or screenshot lands on the vision model, coding keywords land on the
+  code model.
+
+```toml
+[capabilities.code]
+provider = "zai"
+model = "glm-4.7-flash"
+hints = ["refactor", "compile", "debug", "function", "class", "module"]
+
+[capabilities.vision]
+provider = "zai"
+model = "glm-4.6v-flash"
+hints = ["image", "photo", "screenshot", "picture", "diagram"]
+```
+
+Resolution order: capability `provider`/`model` if set, otherwise the matching
+`[levels.*]` entry, otherwise `default_provider`/`default_model`. Fields not
+configured fall through to `default_model`, and agents can still pin their own
+`model` in `[agents.*]`. See `zakhar.models` for a live view of both tables.
+
 ## Uninstall
 
 ```sh

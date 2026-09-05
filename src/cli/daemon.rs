@@ -100,13 +100,13 @@ async fn run_job(job: Job) {
 async fn run_one(job: &Job) -> anyhow::Result<String> {
     let cfg = crate::config::Config::load()?;
     let registry = crate::registry::build(&cfg);
-    let light = crate::levels::resolve(&cfg, "light");
-    let pid = light.provider;
+    let chosen = crate::capabilities::resolve(&cfg, "summary", "light");
+    let pid = chosen.provider;
     let provider = registry
         .get(&pid)
         .ok_or_else(|| anyhow::anyhow!("unknown provider: {pid}"))?;
-    let model = (!light.model.is_empty())
-        .then_some(light.model.clone())
+    let model = (!chosen.model.is_empty())
+        .then_some(chosen.model.clone())
         .or_else(|| cfg.default_model.clone())
         .or_else(|| provider.list_models().first().cloned())
         .unwrap_or_default();
