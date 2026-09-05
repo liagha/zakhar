@@ -257,12 +257,6 @@ fn run_turn(
         for (label, text) in crate::memory::load_blocks() {
             runner.push(crate::types::Message::system(format!("{label}:\n{text}")));
         }
-        let ctx = crate::tools::context_index();
-        if ctx != "no saved knowledge" {
-            runner.push(crate::types::Message::system(format!(
-                "Saved context (fetch values with the context tool as needed):\n{ctx}"
-            )));
-        }
 
         let history: Vec<crate::types::Message> = match serde_json::from_str(&messages_json) {
             Ok(h) => h,

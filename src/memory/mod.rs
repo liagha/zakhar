@@ -26,6 +26,11 @@ pub fn override_path() -> Option<PathBuf> {
     OVERRIDE.get().and_then(|m| m.lock().unwrap().clone())
 }
 
+const MEMORY_TOOLS: &str = "You have persistent project memory shared across sessions. Use the \
+    context tool to save facts worth keeping and to fetch an exact key. Use the remember tool to \
+    recall anything from memory in your own words. Consult memory before guessing, and save what \
+    you learn.";
+
 pub fn load_blocks() -> Vec<(String, String)> {
     let mut blocks = Vec::new();
 
@@ -79,6 +84,8 @@ pub fn load_blocks() -> Vec<(String, String)> {
     if !parts.is_empty() {
         blocks.push(("memory".to_string(), parts.join("\n\n")));
     }
+
+    blocks.push(("memory tools".to_string(), MEMORY_TOOLS.to_string()));
 
     blocks
 }

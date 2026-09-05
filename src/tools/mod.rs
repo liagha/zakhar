@@ -40,20 +40,6 @@ pub fn all() -> Vec<Box<dyn Handler>> {
     ]
 }
 
-pub fn context_index() -> String {
-    let store = crate::memory::knowledge::load();
-    let mut out = String::new();
-    let mut ranked = store.clone();
-    ranked.sort_by(|a, b| b.salience.partial_cmp(&a.salience).unwrap_or(std::cmp::Ordering::Equal));
-    for item in ranked.iter().take(3) {
-        out.push_str(&format!("{}: {}\n", item.summary, item.kind));
-    }
-    if out.is_empty() {
-        out.push_str("no saved knowledge");
-    }
-    out
-}
-
 pub fn context_keys() -> String {
     let store = crate::memory::knowledge::load();
     let summaries: Vec<&str> = store.iter().map(|i| i.summary.as_str()).collect();

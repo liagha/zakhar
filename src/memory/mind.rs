@@ -508,4 +508,104 @@ mod tests {
         assert!(!duplicate("different thing", &list, false));
         assert!(!duplicate("for logos", &list, true), "open-loop check must require flagged items");
     }
+
+    #[tokio::test]
+    async fn run_full_ensemble_end_to_end() {
+        let (dir, _g) = temp_root();
+        let root = dir.keep();
+        drop(_g);
+        let events_p = root.join(".zakhar/memory/episodic.jsonl");
+        std::fs::create_dir_all(events_p.parent().unwrap()).unwrap();
+        let events = [
+            "2026-09-01T10:00:00Z|chat|decided to rewrite the auth module in Rust instead of typescript",
+            "2026-09-01T10:05:00Z|chat|user prefers sqlite over postgres for local dev",
+            "2026-09-02T09:30:00Z|phrase|built the watch tool, it uses inotify",
+            "2026-09-02T10:00:00Z|chat|still need to finish the auth rewrite, token store pending",
+        ];
+        let lines: Vec<String> = events
+            .iter()
+            .map(|e| {
+                let mut parts = e.splitn(3, '|');
+                let ts = parts.next().unwrap();
+                let kind = parts.next().unwrap();
+                let text = parts.next().unwrap();
+                format!(r#"{{"ts":"{ts}","kind":"{kind}","text":"{text}"}}"#)
+            })
+            .collect();
+        std::fs::write(&events_p, lines.join("\n")).unwrap();
+        knowledge::save_root(&root, &[]).unwrap();
+        let provider = MockProvider { script: StageScript::ensemble() };
+        let model = "mock";
+
+        super::run(&root, &provider, model).await.unwrap();
+
+        let store = knowledge::load_root(&root);
+        assert!(!store.is_empty(), "store must gain items");
+        let added_kinds: Vec<&str> = store.iter().map(|i| i.kind.as_str()).collect();
+        assert!(store.iter().any(|i| i.summary.contains("auth")), "auth decision distilled");
+        assert!(store.iter().any(|i| i.summary.contains("sqlite")), "sqlite preference distilled");
+        let marker = load_marker(&root);
+        assert!(!marker.in_flight, "marker released after success");
+        assert_eq!(marker.last_ts, "2026-09-02T10:00:00Z", "marker advanced to newest event");
+        assert!(added_kinds.contains(&"open_loop"), "open loop captured");
+        let notes = std::fs::read_to_string(root.join(".zakhar/NOTES.md")).unwrap_or_default();
+        assert!(notes.contains("## Mind @"), "journal entry appended");
+
+        let second = super::run(&root, &provider, model).await;
+        assert!(second.is_ok(), "rerun with nothing new must be a graceful no-op");
+        let store2 = knowledge::load_root(&root);
+        assert_eq!(store2.len(), store.len(), "rerun must not duplicate items");
+    }
+
+    struct MockProvider {
+        script: StageScript,
+    }
+
+    struct StageScript {
+        archivist: &'static str,
+        critic: &'static str,
+        validator: &'static str,
+    }
+
+    impl StageScript {
+        fn ensemble() -> Self {
+            Self {
+                archivist: r#"{"candidates":[{"kind":"decision","summary":"rewrite the auth module in Rust","detail":"replace the typescript path","tags":["auth","rust"],"refs":[0]},{"kind":"preference","summary":"user prefers sqlite over postgres for local dev","detail":"","tags":["storage"],"refs":[1]}],"loops":[{"summary":"finish the auth rewrite, token store pending"}]}"#,
+                critic: r#"{"add":[{"kind":"decision","summary":"rewrite the auth module in Rust","detail":"replace the typescript path","tags":["auth","rust"],"refs":[0]},{"kind":"preference","summary":"user prefers sqlite over postgres for local dev","detail":"","tags":["storage"],"refs":[1]}],"bump":[],"drop":[],"loops":[{"summary":"finish the auth rewrite, token store pending"}],"journal":"The auth rewrite in Rust is being decided and sqlite is the storage preference for local dev."}"#,
+                validator: r#"{"add":[{"kind":"decision","summary":"rewrite the auth module in Rust","detail":"replace the typescript path","tags":["auth","rust"],"refs":[0]},{"kind":"preference","summary":"user prefers sqlite over postgres for local dev","detail":"","tags":["storage"],"refs":[1]}],"bump":[],"drop":[],"loops":[{"summary":"finish the auth rewrite, token store pending"}],"journal":"The auth rewrite in Rust is being decided and sqlite is the storage preference for local dev."}"#,
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl crate::provider::Provider for MockProvider {
+        fn id(&self) -> &str {
+            "mock"
+        }
+        fn list_models(&self) -> Vec<String> {
+            vec!["mock".to_string()]
+        }
+        async fn chat_stream(&self, request: crate::types::ChatRequest) -> anyhow::Result<crate::provider::DeltaStream> {
+            let system = request
+                .messages
+                .iter()
+                .find_map(|m| match m.role {
+                    crate::types::Role::System => Some(m.content.clone()),
+                    _ => None,
+                })
+                .unwrap_or_default();
+            let body = if system.contains("memory archivist") {
+                self.script.archivist
+            } else if system.contains("memory critic") {
+                self.script.critic
+            } else {
+                self.script.validator
+            };
+let docs = vec![
+            Ok(crate::provider::ChatStreamEvent::Text(body.to_string())),
+            Ok(crate::provider::ChatStreamEvent::Done),
+        ];
+        Ok(Box::pin(futures::stream::iter(docs)))
+    }
+    }
 }
