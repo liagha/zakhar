@@ -18,12 +18,16 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
     let registry = registry::build(&cfg);
     let mut ui = Ui::new(false);
 
-    let provider_id = registry::default_provider(&cfg);
+    let heavy = crate::levels::resolve(&cfg, "heavy");
+    let provider_id = heavy.provider;
     let p = registry
         .get(&provider_id)
         .ok_or_else(|| anyhow::anyhow!("unknown provider: {provider_id}"))?;
 
-    let model = p.list_models().first().cloned().unwrap_or_default();
+    let model = (!heavy.model.is_empty())
+        .then_some(heavy.model.clone())
+        .or_else(|| p.list_models().first().cloned())
+        .unwrap_or_default();
     crate::invoke::seed_models(p.list_models());
 
     let inv = Invoke::new();

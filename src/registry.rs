@@ -26,7 +26,7 @@ pub fn default_provider(cfg: &Config) -> String {
         .unwrap_or_else(|| cfg.providers.keys().next().cloned().unwrap_or_default())
 }
 
-fn resolve_key(cfg: &ProviderConfig) -> String {
+pub fn resolve_key(cfg: &ProviderConfig) -> String {
     let key = cfg.api_key.trim();
     if let Some(env) = key.strip_prefix("{env:")
         && let Some(end) = env.strip_suffix('}') {

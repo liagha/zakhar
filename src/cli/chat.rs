@@ -28,7 +28,8 @@ pub async fn chat(
     let registry = registry::build(&cfg);
     let mut ui = Ui::new(simple);
 
-    let provider_id = provider.unwrap_or_else(|| registry::default_provider(&cfg));
+    let heavy = crate::levels::resolve(&cfg, "heavy");
+    let provider_id = provider.unwrap_or(heavy.provider);
     let p = registry
         .get(&provider_id)
         .ok_or_else(|| anyhow::anyhow!("unknown provider: {provider_id}"))?;
@@ -40,6 +41,7 @@ pub async fn chat(
 
     let model = model
         .or(agent_cfg.map(|a| a.model.clone()))
+        .or((!heavy.model.is_empty()).then_some(heavy.model.clone()))
         .unwrap_or_else(|| p.list_models().first().cloned().unwrap_or_default());
 
     let invoke = if invoke_flag {

@@ -12,9 +12,19 @@ pub struct Config {
     #[serde(default)]
     pub agents: HashMap<String, Agent>,
     #[serde(default)]
+    pub levels: HashMap<String, Level>,
+    #[serde(default)]
     pub default_provider: Option<String>,
     #[serde(default)]
     pub default_model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Level {
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

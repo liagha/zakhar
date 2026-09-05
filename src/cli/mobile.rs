@@ -24,12 +24,19 @@ pub async fn mobile(
         })
     } else {
         let cfg = crate::config::Config::load()?;
-        let pid = crate::registry::default_provider(&cfg);
+        let heavy = crate::levels::resolve(&cfg, "heavy");
+        let pid = heavy.provider;
         let pcfg = cfg
             .providers
             .get(&pid)
             .ok_or_else(|| anyhow::anyhow!("unknown provider: {pid}"))?;
-        Box::new(crate::provider::openai::OpenAI::new(&pid, pcfg))
+        let mut pcfg = pcfg.clone();
+        pcfg.api_key = crate::registry::resolve_key(&pcfg);
+        if !heavy.model.is_empty() {
+            pcfg.default_model = heavy.model.clone();
+            pcfg.models = vec![heavy.model.clone()];
+        }
+        Box::new(crate::provider::openai::OpenAI::new(&pid, &pcfg))
     };
 
     let id = crate::mobile::start(provider, &messages, auto_approve);
