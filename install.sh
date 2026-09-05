@@ -18,29 +18,13 @@ esac
 
 dest="${ZAKHAR_INSTALL_DIR:-$HOME/.local/bin}"
 url="https://github.com/liagha/zakhar/releases/latest/download/zakhar-${target}"
-tmp="$(mktemp)"
 
 mkdir -p "$dest"
 
-if curl -fsSL "$url" -o "$tmp" 2>/dev/null; then
-    chmod +x "$tmp"
-    mv "$tmp" "$dest/zakhar"
-    echo "installed zakhar to $dest/zakhar"
-    "$dest/zakhar" --version
-    exit 0
-fi
-rm -f "$tmp"
+tmp="$(mktemp)"
+curl -fsSL "$url" -o "$tmp"
+chmod +x "$tmp"
+mv "$tmp" "$dest/zakhar"
 
-echo "no prebuilt binary for $target — building from source (needs cargo)" >&2
-if ! command -v cargo >/dev/null 2>&1; then
-    echo "cargo not found. install rust from https://rustup.rs then re-run" >&2
-    exit 1
-fi
-
-build="$(mktemp -d)"
-trap 'rm -rf "$build"' EXIT
-git clone --depth 1 https://github.com/liagha/zakhar.git "$build/repo"
-cargo build --release --manifest-path "$build/repo/Cargo.toml"
-mv "$build/repo/target/release/zakhar" "$dest/zakhar"
 echo "installed zakhar to $dest/zakhar"
 "$dest/zakhar" --version

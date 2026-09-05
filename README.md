@@ -8,13 +8,13 @@ Multi-agent CLI for working with AI coding models. Talk to your files, let the A
 
 ## Install
 
-One line, from source (just needs `cargo` — grab it from https://rustup.rs if missing):
+One line — downloads a prebuilt binary for your OS and arch (no Rust needed):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/liagha/zakhar/master/install.sh | bash
 ```
 
-Installs the `zakhar` binary to `~/.local/bin/zakhar` (override with `ZAKHAR_INSTALL_DIR=/somewhere`). Make sure that directory is on your `PATH`. When a GitHub release is published, `install.sh` automatically downloads the prebuilt binary for your OS/arch instead of building.
+Installs the `zakhar` binary to `~/.local/bin/zakhar` (override with `ZAKHAR_INSTALL_DIR=/somewhere`). Make sure that directory is on your `PATH`. Linux (x86_64, aarch64) and macOS (x86_64, aarch64) are supported.
 
 ## Set up a provider
 
