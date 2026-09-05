@@ -63,12 +63,6 @@ pub async fn chat(
             )));
         }
     }
-    let ctx = crate::tools::context_index();
-    if ctx != "no saved context" {
-        runner.push(crate::types::Message::system(format!(
-            "Saved context (fetch values with the context tool as needed):\n{ctx}"
-        )));
-    }
     if plan_mode {
         runner.push(crate::types::Message::system(
             "PLAN MODE: read-only. Do not use write/edit/bash to modify files. Use todo to plan, ask to clarify, and delegate/handoff to specialists. When plan is complete, summarize without making edits.".to_string(),
@@ -447,6 +441,7 @@ pub async fn chat(
         session.save()?;
         ui.ok("turn complete");
     }
+    let _ = crate::memory::mind::dispatch(&std::env::current_dir().unwrap_or_default());
     Ok(())
 }
 

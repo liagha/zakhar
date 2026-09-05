@@ -45,12 +45,6 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
             "{label}:\n{text}"
         )));
     }
-    let ctx = crate::tools::context_index();
-    if ctx != "no saved context" {
-        runner.push(crate::types::Message::system(format!(
-            "Saved context (fetch values with the context tool as needed):\n{ctx}"
-        )));
-    }
 
     let mut tools = inv.definitions();
     tools.push(delegate::tool_def(&cfg));
@@ -71,6 +65,7 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
     if let Err(e) = crate::memory::episodic::append("phrase", &text) {
         println!("[memory] failed to log event: {e}");
     }
+    let _ = crate::memory::mind::dispatch(&std::env::current_dir().unwrap_or_default());
 
     if let Some(seed) = crate::invoke::chat_message() {
         super::chat(None, None, None, true, false, false, false, seed).await?;

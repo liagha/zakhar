@@ -26,7 +26,6 @@ pub struct Event {
     pub text: String,
 }
 
-/// Append an event. Returns the archived chunk if compaction was triggered.
 pub fn append(kind: &str, text: &str) -> anyhow::Result<Vec<Event>> {
     let path = path();
     let dir = path.parent().unwrap_or_else(|| std::path::Path::new("."));
@@ -54,7 +53,11 @@ pub fn append(kind: &str, text: &str) -> anyhow::Result<Vec<Event>> {
 }
 
 fn read() -> Vec<Event> {
-    std::fs::read_to_string(path())
+    read_events(&path())
+}
+
+pub fn read_events(path: &Path) -> Vec<Event> {
+    std::fs::read_to_string(path)
         .ok()
         .map(|t| {
             t.lines()
@@ -87,8 +90,6 @@ pub fn recent_json(n: usize) -> String {
     serde_json::to_string(&recent(n)).unwrap_or_else(|_| "[]".to_string())
 }
 
-/// Raw archival: move oldest events to archive file, keep ROLL newest.
-/// Returns the archived chunk (empty if nothing was archived).
 pub fn compact() -> anyhow::Result<Vec<Event>> {
     let path = path();
     let events = read();
@@ -142,63 +143,23 @@ pub fn compact() -> anyhow::Result<Vec<Event>> {
     writeln!(notes_file, "{out}")?;
 
     let _ = dispatch_compact(&archive);
+    let _ = super::mind::dispatch(&std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
     Ok(chunk)
 }
 
-/// Background memory-agent job: boil an archived chunk into prose on NOTES.md.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Job {
-    /// Absolute project dir; `.zakhar` lives inside it.
-    pub root: PathBuf,
-    /// Absolute path to the archived chunk.
-    pub archive: PathBuf,
-    pub created: String,
-}
-
-/// Hand the summarisation to the background daemon. Writes a job to the shared
-/// ~/.zakhar/jobs mailbox and makes sure a daemon is running; the daemon
-/// distills the chunk into NOTES.md in its own process, so the caller never
-/// waits and the main agent never sees it.
 pub fn dispatch_compact(archive: &Path) -> anyhow::Result<()> {
-    if cfg!(test) || std::env::var("ZAKHAR_NO_COMPACT").is_ok() {
+    if std::env::var("ZAKHAR_NO_COMPACT").is_ok() {
         return Ok(());
     }
     let root = std::env::current_dir()?;
-    let archive = if archive.is_absolute() {
-        archive.to_path_buf()
-    } else {
-        root.join(archive)
-    };
-    let job = Job {
-        root,
-        archive,
-        created: Utc::now().to_rfc3339(),
-    };
-    let dir = crate::paths::jobs();
-    std::fs::create_dir_all(&dir)?;
-    let name = format!("compact-{}.json", Utc::now().format("%Y%m%d-%H%M%S-%6f"));
-    std::fs::write(dir.join(name), serde_json::to_string(&job)?)?;
-    crate::cli::daemon::ensure_daemon();
-    Ok(())
+    crate::memory::jobs::enqueue("compact", &root, Some(archive))
 }
 
-/// Read archived events back from an archive file (used by the background
-/// daemon, which does not share this process's working directory).
 pub fn read_archive(archive: &Path) -> Vec<Event> {
-    std::fs::read_to_string(archive)
-        .ok()
-        .map(|t| {
-            t.lines()
-                .filter_map(|l| serde_json::from_str(l).ok())
-                .collect()
-        })
-        .unwrap_or_default()
+    read_events(archive)
 }
 
-/// Async LLM summarisation: call the model to distill a chunk of archived
-/// events into a concise prose summary, then append it to NOTES.md.
-/// `root` is the project dir the `.zakhar` home lives in.
 pub async fn summarize_compaction(
     root: &Path,
     provider: &dyn crate::provider::Provider,
@@ -341,5 +302,14 @@ mod tests {
         append("note", "solo").unwrap();
         let events = compact().unwrap();
         assert!(events.is_empty());
+    }
+
+    #[test]
+    fn read_events_parses_shared_log() {
+        let _g = tmp_store();
+        append("note", "shared").unwrap();
+        let events = read_events(&path());
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].text, "shared");
     }
 }

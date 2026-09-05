@@ -1,5 +1,9 @@
 pub mod episodic;
+pub mod jobs;
+pub mod knowledge;
+pub mod mind;
 pub mod profile;
+pub mod recall;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
@@ -15,7 +19,7 @@ pub(crate) fn set_path(p: PathBuf) {
 #[cfg(test)]
 pub(crate) fn lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 pub fn override_path() -> Option<PathBuf> {
@@ -24,6 +28,8 @@ pub fn override_path() -> Option<PathBuf> {
 
 pub fn load_blocks() -> Vec<(String, String)> {
     let mut blocks = Vec::new();
+
+    let _ = knowledge::migrate_once();
 
     if let Some(text) = profile::load() {
         blocks.push(("profile".to_string(), text));
@@ -37,6 +43,11 @@ pub fn load_blocks() -> Vec<(String, String)> {
     let recent = episodic::block(10);
     if recent != "no recent events" {
         blocks.push(("recent".to_string(), recent));
+    }
+
+    let known = knowledge::block(5);
+    if known != "no saved knowledge" {
+        blocks.push(("knowledge".to_string(), known));
     }
 
     let mut parts = Vec::new();

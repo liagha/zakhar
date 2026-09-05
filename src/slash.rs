@@ -3,7 +3,7 @@ use serde_json::json;
 use crate::types::Tool;
 
 pub fn tool_def() -> Tool {
-    let mut available = vec!["/clear", "/compact", "/init", "/help", "/agents", "/skills", "/memory", "/sessions", "/resume", "/kill"];
+    let mut available = vec!["/clear", "/compact", "/init", "/help", "/agents", "/skills", "/memory", "/undo", "/audit", "/sessions", "/resume", "/kill"];
     for dir in [".opencode/commands", ".zakhar/commands", "commands"] {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for e in entries.flatten() {
@@ -114,6 +114,9 @@ fn dispatch(cmd: &str, args: &str, session: &mut crate::session::Session, runner
             out.push_str("  /agents - list agents\n");
             out.push_str("  /skills - list skills (same as skill tool)\n");
             out.push_str("  /memory - browse/search/drop/stale/compact memory\n");
+            out.push_str("  /memory mind - trigger a background mind consolidation run\n");
+            out.push_str("  /undo [n] - revert the last n mutable tool operations\n");
+            out.push_str("  /audit [n] - show the agent ledger of tool operations\n");
             out.push_str("  /sessions - list saved sessions\n");
             out.push_str("  /resume <id> - resume a previous session\n");
             out.push_str("  /kill - kill all background tasks\n");
@@ -159,6 +162,14 @@ fn dispatch(cmd: &str, args: &str, session: &mut crate::session::Session, runner
             }
         }
         "/memory" => memory(args),
+        "/undo" => {
+            let n = args.parse().unwrap_or(1);
+            crate::ledger::undo(n).unwrap_or_else(|e| format!("error: {e}"))
+        }
+        "/audit" => {
+            let n = args.parse().unwrap_or(20);
+            crate::ledger::audit(n)
+        }
         "/sessions" => crate::session::list_formatted(),
         "/resume" => {
             if args.is_empty() {
@@ -202,24 +213,13 @@ fn memory(args: &str) -> String {
 
     match sub {
         "" => {
-            out.push_str("## context keys\n");
-            let keys = crate::tools::context::keys();
-            let stale = crate::tools::context::stale(30);
-            if keys.is_empty() {
+            out.push_str("## knowledge\n");
+            let block = crate::memory::knowledge::block(8);
+            if block == "no saved knowledge" {
                 out.push_str("  (none)\n");
             } else {
-                for k in keys {
-                    if let Some(m) = crate::tools::context::meta(&k) {
-                        let preview: String = m.value.chars().take(60).collect();
-                        let when: String = m.updated.chars().take(16).collect();
-                        let stale_mark = if stale.contains(&k) { " (stale)" } else { "" };
-                        let src = if m.source.is_empty() { "?" } else { &m.source };
-                        let access = match m.access_count {
-                            0 => String::new(),
-                            n => format!(", {n}×"),
-                        };
-                        out.push_str(&format!("  - {k}: {preview} (src: {src}, upd: {when}{access}){stale_mark}\n"));
-                    }
+                for line in block.lines() {
+                    out.push_str(&format!("  {line}\n"));
                 }
             }
             out.push_str("## recent events\n");
@@ -227,11 +227,16 @@ fn memory(args: &str) -> String {
         }
         "drop" => {
             if rest.is_empty() {
-                return "usage: /memory drop <key>".to_string();
+                return "usage: /memory drop <key-or-id>".to_string();
             }
-            match crate::tools::context::remove(rest) {
-                Some(v) => out.push_str(&format!("dropped context key '{rest}' ({} bytes)", v.len())),
-                None => out.push_str(&format!("no context key '{rest}'")),
+            match crate::memory::knowledge::remove(rest) {
+                Ok(Some(item)) => out.push_str(&format!(
+                    "dropped knowledge '{}' ({} bytes)",
+                    item.summary,
+                    item.detail.as_ref().map(|d| d.len()).unwrap_or(0)
+                )),
+                Ok(None) => out.push_str(&format!("no knowledge '{rest}'")),
+                Err(e) => out.push_str(&format!("error: {e}")),
             }
         }
         "compact" => {
@@ -241,18 +246,21 @@ fn memory(args: &str) -> String {
                 Err(e) => out.push_str(&format!("error: {e}")),
             }
         }
+        "mind" => {
+            match crate::memory::mind::dispatch(&std::env::current_dir().unwrap_or_default()) {
+                Ok(_) => out.push_str("mind consolidation dispatched in the background"),
+                Err(e) => out.push_str(&format!("error: {e}")),
+            }
+        }
         "stale" => {
             let days = rest.parse().unwrap_or(30);
-            let stale = crate::tools::context::stale(days);
+            let stale = crate::memory::knowledge::stale(days);
             if stale.is_empty() {
-                out.push_str(&format!("no stale context keys (>{days} days since last access)"));
+                out.push_str(&format!("no stale knowledge (>{days} days since last access)"));
             } else {
-                out.push_str(&format!("stale context keys (>{days} days since last access):\n"));
-                for k in stale {
-                    let when = crate::tools::context::meta(&k)
-                        .map(|m| m.accessed_at.chars().take(16).collect::<String>())
-                        .unwrap_or_default();
-                    out.push_str(&format!("  - {k} (last {when})\n"));
+                out.push_str(&format!("stale knowledge (>{days} days since last access):\n"));
+                for key in stale {
+                    out.push_str(&format!("  - {key}\n"));
                 }
             }
         }
@@ -260,17 +268,21 @@ fn memory(args: &str) -> String {
             if rest.is_empty() {
                 return "usage: /memory search <text>".to_string();
             }
-            out.push_str("## context matches\n");
-            let hits = crate::tools::context::recall(rest, 5);
+            out.push_str("## knowledge matches\n");
+            let store = crate::memory::knowledge::load();
+            let hits = crate::memory::recall::remember(rest, &store, 5);
             if hits.is_empty() {
                 out.push_str("  (none)\n");
             } else {
-                for (k, v, s) in hits {
-                    if s.is_empty() {
-                        out.push_str(&format!("  - {k}: {v}\n"));
-                    } else {
-                        out.push_str(&format!("  - {k}: {v} (source: {s})\n"));
-                    }
+                for hit in hits {
+                    let open = if hit.loop_open { " (open loop)" } else { "" };
+                    let when: String = hit.item.updated.chars().take(16).collect();
+                    out.push_str(&format!(
+                        "  - {} ({} · {:.2} · {when}){open}\n",
+                        hit.item.summary,
+                        hit.item.kind,
+                        hit.item.salience
+                    ));
                 }
             }
             out.push_str("## event matches\n");
@@ -286,7 +298,7 @@ fn memory(args: &str) -> String {
                 out.push_str("  (none)\n");
             }
         }
-        other => out.push_str(&format!("unknown /memory subcommand '{other}'. Try /memory, /memory drop <key>, /memory compact, /memory stale [<days>], /memory search <text>")),
+        other => out.push_str(&format!("unknown /memory subcommand '{other}'. Try /memory, /memory drop <key>, /memory compact, /memory stale [<days>], /memory search <text>, /memory mind")),
     }
 
     out

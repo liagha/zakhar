@@ -2,7 +2,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
-use crate::memory::episodic;
+use crate::memory::{episodic, jobs::Job, mind};
 use crate::reminder;
 
 pub fn notify(message: &str) {
@@ -79,39 +79,25 @@ fn drain_jobs() {
         let path = entry.path();
         if path.extension().map(|x| x == "json").unwrap_or(false)
             && let Ok(text) = std::fs::read_to_string(&path)
-            && let Ok(job) = serde_json::from_str::<episodic::Job>(&text)
+            && let Ok(job) = serde_json::from_str::<Job>(&text)
         {
             let _ = std::fs::remove_file(&path);
             tokio::spawn(async move {
-                summarize(job).await;
+                run_job(job).await;
             });
         }
     }
 }
 
-struct Summary {
-    events: usize,
-    chars: usize,
-}
-
-async fn summarize(job: episodic::Job) {
-    let line = match run_summary(&job).await {
-        Ok(s) => format!(
-            "daemon: summarized {} events from {} ({} chars)",
-            s.events,
-            job.archive.display(),
-            s.chars
-        ),
-        Err(e) => format!("daemon: summary failed for {}: {e}", job.archive.display()),
+async fn run_job(job: Job) {
+    let line = match run_one(&job).await {
+        Ok(s) => s,
+        Err(e) => format!("daemon: {:?} job failed for {}: {e}", job.kind, job.root.display()),
     };
     log(&job.root.join(".zakhar/memory/compaction.log"), &line);
 }
 
-async fn run_summary(job: &episodic::Job) -> anyhow::Result<Summary> {
-    let events = episodic::read_archive(&job.archive);
-    if events.is_empty() {
-        anyhow::bail!("archive is empty");
-    }
+async fn run_one(job: &Job) -> anyhow::Result<String> {
     let cfg = crate::config::Config::load()?;
     let registry = crate::registry::build(&cfg);
     let pid = crate::registry::default_provider(&cfg);
@@ -123,7 +109,36 @@ async fn run_summary(job: &episodic::Job) -> anyhow::Result<Summary> {
         .clone()
         .or_else(|| provider.list_models().first().cloned())
         .unwrap_or_default();
-    let summary = episodic::summarize_compaction(&job.root, provider, &model, &events).await?;
+    match job.kind.as_str() {
+        "mind" => mind::run(&job.root, provider, &model).await?,
+        _ => {
+            let summary = run_summary(job, provider, &model).await?;
+            return Ok(format!(
+                "daemon: summarized {} events from {} ({} chars)",
+                summary.events,
+                job.archive.as_deref().map(|p| p.display().to_string()).unwrap_or_default(),
+                summary.chars
+            ));
+        }
+    }
+    Ok(format!("daemon: mind run finished for {}", job.root.display()))
+}
+
+struct Summary {
+    events: usize,
+    chars: usize,
+}
+
+async fn run_summary(job: &Job, provider: &dyn crate::provider::Provider, model: &str) -> anyhow::Result<Summary> {
+    let archive = job
+        .archive
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("compact job missing archive"))?;
+    let events = episodic::read_archive(archive);
+    if events.is_empty() {
+        anyhow::bail!("archive is empty");
+    }
+    let summary = episodic::summarize_compaction(&job.root, provider, model, &events).await?;
     Ok(Summary {
         events: events.len(),
         chars: summary.len(),

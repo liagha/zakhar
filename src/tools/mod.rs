@@ -7,6 +7,7 @@ pub(crate) use exec::Task;
 mod fetch;
 mod fs;
 mod remind;
+mod remember;
 mod search;
 mod session;
 mod system;
@@ -27,6 +28,7 @@ pub fn all() -> Vec<Box<dyn Handler>> {
         Box::new(ask::Ask),
         Box::new(ask::Todo),
         Box::new(context::Context),
+        Box::new(remember::Remember),
         Box::new(compact::Compact),
         Box::new(fetch::Fetch),
         Box::new(search::Search),
@@ -39,9 +41,21 @@ pub fn all() -> Vec<Box<dyn Handler>> {
 }
 
 pub fn context_index() -> String {
-    context::index()
+    let store = crate::memory::knowledge::load();
+    let mut out = String::new();
+    let mut ranked = store.clone();
+    ranked.sort_by(|a, b| b.salience.partial_cmp(&a.salience).unwrap_or(std::cmp::Ordering::Equal));
+    for item in ranked.iter().take(3) {
+        out.push_str(&format!("{}: {}\n", item.summary, item.kind));
+    }
+    if out.is_empty() {
+        out.push_str("no saved knowledge");
+    }
+    out
 }
 
 pub fn context_keys() -> String {
-    context::context_keys()
+    let store = crate::memory::knowledge::load();
+    let summaries: Vec<&str> = store.iter().map(|i| i.summary.as_str()).collect();
+    serde_json::to_string(&summaries).unwrap_or_else(|_| "[]".to_string())
 }

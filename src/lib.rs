@@ -16,6 +16,7 @@ pub mod delegate;
 pub mod handler;
 pub mod hooks;
 pub mod invoke;
+pub mod ledger;
 pub mod memory;
 pub mod migrate;
 pub mod paths;

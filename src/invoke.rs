@@ -52,8 +52,8 @@ pub fn models() -> anyhow::Result<String> {
 }
 
 pub const READONLY: &[&str] = &[
-    "read", "glob", "grep", "ask", "todo", "task", "skill", "control", "context", "slash",
-    "delegate", "handoff", "session", "search", "fetch",
+    "read", "glob", "grep", "ask", "todo", "task", "skill", "control", "context", "remember",
+    "slash", "delegate", "handoff", "session", "search", "fetch",
 ];
 
 pub struct Invoke {
@@ -90,9 +90,20 @@ impl Invoke {
             Some(h) => h,
             None => return format!("error: unknown tool: {name}"),
         };
-        match handler.run(args) {
+        let revert = if name == "write" || name == "edit" {
+            args.get("path")
+                .and_then(|v| v.as_str())
+                .and_then(crate::ledger::snapshot)
+        } else {
+            None
+        };
+        let outcome = match handler.run(args) {
             Ok(v) => v,
             Err(e) => format!("error: {e}"),
+        };
+        if let Err(e) = crate::ledger::record(name, args, &outcome, revert) {
+            return format!("{outcome}\n[ledger] {e}");
         }
+        outcome
     }
 }

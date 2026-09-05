@@ -258,7 +258,7 @@ fn run_turn(
             runner.push(crate::types::Message::system(format!("{label}:\n{text}")));
         }
         let ctx = crate::tools::context_index();
-        if ctx != "no saved context" {
+        if ctx != "no saved knowledge" {
             runner.push(crate::types::Message::system(format!(
                 "Saved context (fetch values with the context tool as needed):\n{ctx}"
             )));
