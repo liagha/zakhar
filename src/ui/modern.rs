@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::time::Instant;
 
 use colored::Colorize;
 
@@ -10,7 +11,11 @@ pub struct Modern {
     reason: String,
     reason_dirty: bool,
     mark_printed: bool,
+    preview: String,
+    preview_at: Option<Instant>,
 }
+
+const PREVIEW_TICK: std::time::Duration = std::time::Duration::from_millis(30);
 
 impl Modern {
     pub fn new() -> Self {
@@ -20,6 +25,8 @@ impl Modern {
             reason: String::new(),
             reason_dirty: false,
             mark_printed: false,
+            preview: String::new(),
+            preview_at: None,
         }
     }
 
@@ -48,6 +55,12 @@ impl Modern {
         flush();
     }
 
+    pub fn summary(&mut self, msg: &str) {
+        self.clear_status();
+        println!("{}", msg.dimmed());
+        flush();
+    }
+
     pub fn reasoning(&mut self, text: &str) {
         self.mark_printed = false;
         for c in text.chars() {
@@ -62,6 +75,7 @@ impl Modern {
 
     pub fn tool_call(&mut self, calls_summary: &str) {
         self.clear_status();
+        self.clear_preview();
         self.end_line();
         println!("{} {}", "▸".bright_cyan(), calls_summary.bright_black());
         flush();
@@ -69,6 +83,7 @@ impl Modern {
 
     pub fn tool_result(&mut self, name: &str, preview: &str, byte_len: usize) {
         self.clear_status();
+        self.clear_preview();
         if byte_len > 500 {
             println!(
                 "{} {} ({} B): {} …",
@@ -96,11 +111,17 @@ impl Modern {
         }
         let out = self.md.feed(text);
         if !out.is_empty() {
+            self.clear_preview();
             if !self.mark_printed {
                 self.mark_printed = true;
             }
             print!("{out}");
             flush();
+        }
+        if self.md.has_pending() {
+            self.paint_preview();
+        } else {
+            self.clear_preview();
         }
     }
 
@@ -109,6 +130,7 @@ impl Modern {
         if self.reason_dirty {
             self.flush_reason();
         }
+        self.clear_preview();
         let tail = self.md.finish();
         if !tail.is_empty() {
             print!("{tail}");
@@ -144,6 +166,37 @@ impl Modern {
         if self.mark_printed {
             print!("\n");
             self.mark_printed = false;
+            flush();
+        }
+    }
+
+    fn paint_preview(&mut self) {
+        let pending = self.md.pending_raw().to_string();
+        if pending.trim().is_empty() {
+            self.clear_preview();
+            return;
+        }
+        let due = match self.preview_at {
+            Some(t) => t.elapsed() >= PREVIEW_TICK,
+            None => true,
+        };
+        let grew = pending.len() >= self.preview.len() && !self.preview.is_empty();
+        if !due && !grew {
+            return;
+        }
+        let rendered = markdown::preview(&pending);
+        self.clear_preview();
+        print!("{}", rendered.dimmed());
+        self.preview = pending;
+        self.preview_at = Some(Instant::now());
+        flush();
+    }
+
+    fn clear_preview(&mut self) {
+        if !self.preview.is_empty() || self.preview_at.is_some() {
+            print!("\r\x1b[2K");
+            self.preview.clear();
+            self.preview_at = None;
             flush();
         }
     }

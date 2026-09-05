@@ -175,6 +175,9 @@ pub async fn chat(
         runner.push(user_msg.clone());
         session.messages.push(user_msg);
 
+        let turn_start = std::time::Instant::now();
+        let mut tool_count = 0usize;
+
         loop {
             ui.status("…");
             let mut stream = match runner.stream().await {
@@ -251,6 +254,7 @@ pub async fn chat(
                     })
                 })
                 .collect();
+            tool_count += tool_calls.len();
 
             if tool_calls.is_empty() || invoke.is_none() {
                 if !full.trim().is_empty()
@@ -461,6 +465,10 @@ pub async fn chat(
             }
         }
         session.save()?;
+        let secs = turn_start.elapsed().as_secs_f64();
+        ui.summary(&format!(
+            "done · {secs:.1}s · {tool_count} tool(s) · {provider_id}/{model}"
+        ));
         ui.ok("turn complete");
     }
     let _ = crate::memory::mind::dispatch(&std::env::current_dir().unwrap_or_default());

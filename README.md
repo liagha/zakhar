@@ -52,6 +52,10 @@ zakhar paths                      # where everything lives
 
 Reminders are an AI tool: the model turns a phrase like *"my pills at 11am"* into a stored reminder, and a background daemon (`notify-send` on Linux, `osascript` on macOS) fires it when due.
 
+## Terminal
+
+Markdown streams in, rendered live: headings, bold, code fences (with syntax-style coloring on the fence line), inline code, lists, and tables are colored as each completes. The in-progress line is shown as a dim preview that repaints in place without flicker. Tool steps appear as `▸ call` / `▾ result` lines, and each turn ends with a summary line like `done · 4.2s · 1 tool(s) · provider/model`. Add `--simple` to `zakhar chat` for a plain no-ANSI output.
+
 ## Memory
 
 Zakhar keeps a persistent memory of your project — knowledge it learns while working, and an event log of everything that happens. Both live in `.zakhar/memory/` inside the project.

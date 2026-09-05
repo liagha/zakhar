@@ -35,6 +35,14 @@ impl Stream {
         out
     }
 
+    pub fn pending_raw(&self) -> &str {
+        &self.buf
+    }
+
+    pub fn has_pending(&self) -> bool {
+        !self.buf.is_empty()
+    }
+
     pub fn finish(&mut self) -> String {
         let mut out = String::new();
         if !self.buf.is_empty() {
@@ -430,6 +438,10 @@ fn plain_len(s: &str) -> usize {
     n
 }
 
+pub fn preview(input: &str) -> String {
+    inline(input)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -576,5 +588,24 @@ mod tests {
         assert!(out.contains("b"));
         // url is rendered once via formatting, not left as raw trailing text
         assert_eq!(out.matches('x').count(), 1);
+    }
+
+    #[test]
+    fn pending_holds_incomplete_line() {
+        let mut s = Stream::new();
+        let out = s.feed("# Ti");
+        assert!(out.is_empty());
+        assert_eq!(s.pending_raw(), "# Ti");
+        let _ = s.feed("tle\n");
+        assert!(s.pending_raw().is_empty());
+    }
+
+    #[test]
+    fn preview_inlines_bold_and_code() {
+        let p = preview("see **bold** and `code`");
+        assert!(!p.contains("**"));
+        assert!(!p.contains('`'));
+        assert!(plain(&p).contains("bold"));
+        assert!(plain(&p).contains("code"));
     }
 }

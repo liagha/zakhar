@@ -79,7 +79,12 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
     ui.status("…");
 
     let mut session = Session::new();
-    let text = run_tool_loop(&mut ui, &mut runner, &cfg, &inv, p, &mut session).await?;
+    let turn_start = std::time::Instant::now();
+    let mut tool_count = 0usize;
+    let text =
+        run_tool_loop(&mut ui, &mut runner, &cfg, &inv, p, &mut session, &mut tool_count).await?;
+    let secs = turn_start.elapsed().as_secs_f64();
+    ui.summary(&format!("done · {secs:.1}s · {tool_count} tool(s) · {provider_id}/{model}"));
 
     if let Err(e) = crate::memory::episodic::append("phrase", &text) {
         println!("[memory] failed to log event: {e}");
@@ -91,7 +96,6 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    ui.ok(&text);
     Ok(())
 }
 
@@ -102,6 +106,7 @@ async fn run_tool_loop(
     inv: &Invoke,
     provider: &dyn crate::provider::Provider,
     session: &mut Session,
+    tool_count: &mut usize,
 ) -> anyhow::Result<String> {
     loop {
         let mut stream = match runner.stream().await {
@@ -117,7 +122,7 @@ async fn run_tool_loop(
                 crate::provider::ChatStreamEvent::Reasoning(_) => {}
                 crate::provider::ChatStreamEvent::Text(t) => {
                     full.push_str(&t);
-                    ui.status(&preview(&full));
+                    ui.text(&t);
                 }
                 crate::provider::ChatStreamEvent::ToolCall(part) => {
                     let entry = tool_parts.entry(part.index).or_default();
@@ -152,9 +157,11 @@ async fn run_tool_loop(
                 })
             })
             .collect();
+        *tool_count += tool_calls.len();
 
         if tool_calls.is_empty() {
             runner.push(crate::types::Message::assistant(full.clone(), None));
+            ui.end();
             return Ok(full);
         }
 
@@ -313,15 +320,6 @@ fn phrase_grants_permission(phrase: &str) -> bool {
     ]
     .iter()
     .any(|marker| p.contains(marker))
-}
-
-fn preview(s: &str) -> String {
-    let one = s.split('\n').next().unwrap_or("").trim();
-    let mut out: String = one.chars().take(80).collect();
-    if one.chars().count() > 80 {
-        out.push('…');
-    }
-    out
 }
 
 #[derive(Default)]

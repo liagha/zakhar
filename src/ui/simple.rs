@@ -33,6 +33,11 @@ impl Simple {
         flush();
     }
 
+    pub fn summary(&mut self, msg: &str) {
+        println!("{msg}");
+        flush();
+    }
+
     pub fn reasoning(&mut self, text: &str) {
         print!("{}", text.italic().dimmed());
         flush();

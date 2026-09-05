@@ -47,6 +47,13 @@ impl Ui {
         }
     }
 
+    pub fn summary(&mut self, msg: &str) {
+        match self {
+            Ui::Simple(u) => u.summary(msg),
+            Ui::Modern(u) => u.summary(msg),
+        }
+    }
+
     pub fn reasoning(&mut self, text: &str) {
         match self {
             Ui::Simple(u) => u.reasoning(text),
