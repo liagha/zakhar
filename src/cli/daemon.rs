@@ -56,7 +56,7 @@ pub async fn run() -> anyhow::Result<()> {
             let msg = format!("⏰ {}", r.message);
             notify(&msg);
             println!("⏰ fired: {} — {}", r.id, r.message);
-            if r.recurring.is_none() {
+            if !r.is_recurring() {
                 reminder::mark_done(&r.id);
             } else if let Some(rr) = r.recurring {
                 let next = advance(&r.due_at, &rr);

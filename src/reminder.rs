@@ -70,6 +70,18 @@ pub fn drop(id: &str) -> Option<Reminder> {
     removed
 }
 
+impl Reminder {
+    pub fn is_recurring(&self) -> bool {
+        match self.recurring.as_deref() {
+            Some(s) => {
+                let t = s.trim().to_lowercase();
+                !(t.is_empty() || t == "none" || t == "null" || t == "false" || t == "0")
+            }
+            None => false,
+        }
+    }
+}
+
 pub fn mark_done(id: &str) {
     let mut list = load();
     for r in &mut list {
@@ -90,4 +102,38 @@ pub fn due_and_due() -> Vec<Reminder> {
         .into_iter()
         .filter(|r| parse_due(&r.due_at).map(|d| d <= now).unwrap_or(false))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rem(recurring: Option<String>) -> Reminder {
+        Reminder {
+            id: "id".to_string(),
+            message: "m".to_string(),
+            due_at: "2026-01-01T00:00:00Z".to_string(),
+            recurring,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            done: false,
+        }
+    }
+
+    #[test]
+    fn none_is_not_recurring() {
+        assert!(!rem(None).is_recurring());
+    }
+
+    #[test]
+    fn placeholder_strings_are_not_recurring() {
+        for s in ["None", "none", "null", "", "false", "0"] {
+            assert!(!rem(Some(s.to_string())).is_recurring(), "{s:?} should not be recurring");
+        }
+    }
+
+    #[test]
+    fn real_intervals_are_recurring() {
+        assert!(rem(Some("daily".to_string())).is_recurring());
+        assert!(rem(Some("every hour".to_string())).is_recurring());
+    }
 }
