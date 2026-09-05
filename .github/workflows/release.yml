@@ -53,6 +53,10 @@ jobs:
         with:
           tool: cargo-zigbuild
 
+      - name: install zig
+        if: matrix.zigbuild
+        uses: goto-bus-stop/setup-zig@v2
+
       - name: build
         if: matrix.zigbuild
         run: cargo zigbuild --release --target ${{ matrix.rust }}
