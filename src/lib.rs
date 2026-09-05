@@ -19,6 +19,7 @@ pub mod invoke;
 pub mod ledger;
 pub mod memory;
 pub mod migrate;
+pub mod mobile;
 pub mod paths;
 pub mod provider;
 pub mod registry;

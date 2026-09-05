@@ -1,4 +1,4 @@
-use zakhar::cli::{chat, clean, daemon, models, shout};
+use zakhar::cli::{chat, clean, daemon, mobile, models, shout};
 
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
@@ -32,6 +32,13 @@ enum Command {
     },
     Models {
         provider: Option<String>,
+    },
+    Mobile {
+        message: String,
+        #[arg(long)]
+        auto: bool,
+        #[arg(long)]
+        mock: bool,
     },
     Completion {
         #[arg(value_enum)]
@@ -76,6 +83,9 @@ async fn main() -> anyhow::Result<()> {
                 .await?
         }
         (Some(Command::Models { provider }), _) => models(provider).await?,
+        (Some(Command::Mobile { message, auto, mock }), _) => {
+            mobile(message, auto, mock).await?
+        }
         (Some(Command::Completion { shell }), _) => {
             let mut cmd = Cli::command();
             clap_complete::generate(shell, &mut cmd, "zakhar", &mut std::io::stdout());

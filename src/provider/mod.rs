@@ -7,6 +7,8 @@ use crate::types::{ChatRequest, Message};
 
 pub type DeltaStream = Pin<Box<dyn Stream<Item = anyhow::Result<ChatStreamEvent>> + Send>>;
 
+pub mod mock;
+
 #[derive(Debug, Clone)]
 pub enum ChatStreamEvent {
     Text(String),
