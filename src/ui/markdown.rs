@@ -1,17 +1,21 @@
 use colored::Colorize;
 
-pub struct Stream {
+use super::palette::Palette;
+
+pub struct Stream<'a> {
     buf: String,
     fence: Option<String>,
     table: Vec<String>,
+    pal: &'a Palette,
 }
 
-impl Stream {
-    pub fn new() -> Self {
+impl<'a> Stream<'a> {
+    pub fn new(pal: &'a Palette) -> Self {
         Self {
             buf: String::new(),
             fence: None,
             table: Vec::new(),
+            pal,
         }
     }
 
@@ -51,10 +55,10 @@ impl Stream {
         }
         if self.fence.is_some() {
             self.fence = None;
-            out.push_str(&format!("{}\n", color_close()));
+            out.push_str(&format!("{}\n", color_close(self.pal)));
         }
         if !self.table.is_empty() {
-            out.push_str(&render_table(&self.table));
+            out.push_str(&render_table(&self.table, self.pal));
             self.table.clear();
         }
         out
@@ -64,27 +68,27 @@ impl Stream {
         if self.fence.is_some() {
             if is_fence(line) {
                 self.fence = None;
-                out.push_str(&format!("{}\n", color_close()));
+                out.push_str(&format!("{}\n", color_close(self.pal)));
             } else if is_table(line) {
                 self.table.push(line.to_string());
             } else {
                 if !self.table.is_empty() {
-                    out.push_str(&render_table(&self.table));
+                    out.push_str(&render_table(&self.table, self.pal));
                     self.table.clear();
                 }
-                out.push_str(&format!("{}\n", code(line)));
+                out.push_str(&format!("{}\n", code(line, self.pal)));
             }
             return;
         }
 
         if is_fence(line) {
             if !self.table.is_empty() {
-                out.push_str(&render_table(&self.table));
+                out.push_str(&render_table(&self.table, self.pal));
                 self.table.clear();
             }
             let lang = fence_lang(line).to_string();
             self.fence = Some(lang.clone());
-            out.push_str(&format!("{}\n", color_open(&lang)));
+            out.push_str(&format!("{}\n", color_open(&lang, self.pal)));
             return;
         }
 
@@ -95,7 +99,7 @@ impl Stream {
 
         if !self.table.is_empty() {
             if line.trim().is_empty() {
-                out.push_str(&render_table(&self.table));
+                out.push_str(&render_table(&self.table, self.pal));
                 self.table.clear();
             } else {
                 self.table.push(line.to_string());
@@ -109,12 +113,12 @@ impl Stream {
         }
 
         if let Some(mark) = heading(line) {
-            out.push_str(&heading_text(mark, inline(line[mark..].trim())));
+            out.push_str(&heading_text(mark, inline(line[mark..].trim(), self.pal), self.pal));
             return;
         }
 
         if quote(line) {
-            out.push_str(&quote_text(inline(line.trim_start().trim_start_matches('>').trim())));
+            out.push_str(&quote_text(inline(line.trim_start().trim_start_matches('>').trim(), self.pal), self.pal));
             return;
         }
 
@@ -124,16 +128,16 @@ impl Stream {
             } else {
                 ("•".to_string(), &line[off..])
             };
-            out.push_str(&item_text(glyph, inline(rest.trim())));
+            out.push_str(&item_text(glyph, inline(rest.trim(), self.pal), self.pal));
             return;
         }
 
         if rule(line) {
-            out.push_str(&color_rule());
+            out.push_str(&color_rule(self.pal));
             return;
         }
 
-        out.push_str(&format!("{}\n", inline(line)));
+        out.push_str(&format!("{}\n", inline(line, self.pal)));
     }
 }
 
@@ -195,30 +199,30 @@ fn rule(line: &str) -> bool {
     t == "---" || t == "***" || t == "___"
 }
 
-fn inline(input: &str) -> String {
+fn inline(input: &str, pal: &Palette) -> String {
     let mut out = String::new();
     let mut rest = input;
     while !rest.is_empty() {
         if let Some((pre, content, len)) = code_span(rest)
             && len <= rest.len()
         {
-            out.push_str(&inline(&pre));
-            out.push_str(&code_text(content));
+            out.push_str(&inline(&pre, pal));
+            out.push_str(&code_text(content, pal));
             rest = &rest[len..];
             continue;
         }
         if let Some((pre, text, url, len)) = link_span(rest)
             && len <= rest.len()
         {
-            out.push_str(&inline(&pre));
-            out.push_str(&link_text(text, url));
+            out.push_str(&inline(&pre, pal));
+            out.push_str(&link_text(text, url, pal));
             rest = &rest[len..];
             continue;
         }
         if let Some((pre, bold, len)) = bold_span(rest)
             && len <= rest.len()
         {
-            out.push_str(&inline(&pre));
+            out.push_str(&inline(&pre, pal));
             out.push_str(&bold_text(bold));
             rest = &rest[len..];
             continue;
@@ -226,7 +230,7 @@ fn inline(input: &str) -> String {
         if let Some((pre, ital, len)) = italic_span(rest)
             && len <= rest.len()
         {
-            out.push_str(&inline(&pre));
+            out.push_str(&inline(&pre, pal));
             out.push_str(&italic_text(ital));
             rest = &rest[len..];
             continue;
@@ -302,15 +306,15 @@ fn italic_span(s: &str) -> Option<(String, &str, usize)> {
     None
 }
 
-fn code_text(content: &str) -> String {
-    format!("{}", content.dimmed())
+fn code_text(content: &str, pal: &Palette) -> String {
+    pal.code.on(content)
 }
 
-fn link_text(text: &str, url: &str) -> String {
+fn link_text(text: &str, url: &str, pal: &Palette) -> String {
     format!(
         "{}{}",
-        text.underline().blue(),
-        format!(" ({url})").dimmed()
+        pal.link.on_underline(text),
+        pal.url.on(&format!(" ({url})"))
     )
 }
 
@@ -322,44 +326,40 @@ fn italic_text(s: &str) -> String {
     s.italic().to_string()
 }
 
-fn code(line: &str) -> String {
-    format!("  {}", line.dimmed())
+fn code(line: &str, pal: &Palette) -> String {
+    format!("  {}", pal.code.on(line))
 }
 
-fn color_open(lang: &str) -> String {
+fn color_open(lang: &str, pal: &Palette) -> String {
     if lang.is_empty() {
-        "```".cyan().to_string()
+        pal.code.on("```")
     } else {
-        format!("``` {}", lang.cyan())
+        format!("``` {}", pal.code.on(lang))
     }
 }
 
-fn color_close() -> String {
-    "```".cyan().to_string()
+fn color_close(pal: &Palette) -> String {
+    pal.code.on("```")
 }
 
-fn heading_text(mark: usize, content: String) -> String {
-    match mark {
-        1 => format!("{}\n", content.bold().bright_white().underline()),
-        2 => format!("{}\n", content.bold().bright_cyan()),
-        3 => format!("{}\n", content.bold().cyan()),
-        _ => format!("{}\n", content.bold()),
-    }
+fn heading_text(mark: usize, content: String, pal: &Palette) -> String {
+    let paint = pal.headings.get(mark.saturating_sub(1)).unwrap_or(&pal.headings[3]);
+    format!("{}\n", paint.on_bold(&content))
 }
 
-fn quote_text(content: String) -> String {
-    format!("{} {}", "│".dimmed(), content.dimmed())
+fn quote_text(content: String, pal: &Palette) -> String {
+    format!("{} {}", pal.quote.on("│"), pal.quote.on(&content))
 }
 
-fn item_text(mark: String, rest: String) -> String {
-    format!("{} {}\n", mark.cyan(), rest)
+fn item_text(mark: String, rest: String, pal: &Palette) -> String {
+    format!("{} {}\n", pal.list.on(&mark), rest)
 }
 
-fn color_rule() -> String {
-    format!("{}\n", "───".repeat(6).dimmed())
+fn color_rule(pal: &Palette) -> String {
+    format!("{}\n", pal.rule.on(&"───".repeat(6)))
 }
 
-fn render_table(rows: &[String]) -> String {
+fn render_table(rows: &[String], pal: &Palette) -> String {
     if rows.is_empty() {
         return String::new();
     }
@@ -395,9 +395,9 @@ fn render_table(rows: &[String]) -> String {
             let val = row.get(ci).copied().unwrap_or("");
             let pad = w.saturating_sub(plain_len(val));
             let styled = if ri == 0 {
-                inline(val).bold().to_string()
+                inline(val, pal).bold().to_string()
             } else {
-                inline(val)
+                inline(val, pal)
             };
             out.push_str(&format!(" {}{} |", styled, " ".repeat(pad)));
         }
@@ -438,8 +438,8 @@ fn plain_len(s: &str) -> usize {
     n
 }
 
-pub fn preview(input: &str) -> String {
-    inline(input)
+pub fn preview(input: &str, pal: &Palette) -> String {
+    inline(input, pal)
 }
 
 #[cfg(test)]
@@ -447,7 +447,8 @@ mod tests {
     use super::*;
 
     fn render(input: &str) -> String {
-        let mut s = Stream::new();
+        let pal = Palette::default();
+        let mut s = Stream::new(&pal);
         let mut out = s.feed(input);
         out.push_str(&s.finish());
         out
@@ -559,7 +560,8 @@ mod tests {
 
     #[test]
     fn split_across_feed() {
-        let mut s = Stream::new();
+        let pal = Palette::default();
+        let mut s = Stream::new(&pal);
         let o1 = s.feed("# Ti");
         let o2 = s.feed("tle\n");
         assert!(o1.is_empty());
@@ -592,7 +594,8 @@ mod tests {
 
     #[test]
     fn pending_holds_incomplete_line() {
-        let mut s = Stream::new();
+        let pal = Palette::default();
+        let mut s = Stream::new(&pal);
         let out = s.feed("# Ti");
         assert!(out.is_empty());
         assert_eq!(s.pending_raw(), "# Ti");
@@ -602,7 +605,8 @@ mod tests {
 
     #[test]
     fn preview_inlines_bold_and_code() {
-        let p = preview("see **bold** and `code`");
+        let pal = Palette::default();
+        let p = preview("see **bold** and `code`", &pal);
         assert!(!p.contains("**"));
         assert!(!p.contains('`'));
         assert!(plain(&p).contains("bold"));

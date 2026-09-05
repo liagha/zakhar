@@ -2,11 +2,15 @@ use std::io::Write;
 
 use colored::Colorize;
 
-pub struct Simple;
+use super::palette::Palette;
 
-impl Simple {
-    pub fn new() -> Self {
-        Self
+pub struct Simple<'a> {
+    pal: &'a Palette,
+}
+
+impl<'a> Simple<'a> {
+    pub fn new(pal: &'a Palette) -> Self {
+        Self { pal }
     }
 
     pub fn status(&mut self, msg: &str) {
@@ -17,12 +21,12 @@ impl Simple {
     }
 
     pub fn ok(&mut self, msg: &str) {
-        println!("{} {msg}", "✓".green());
+        println!("{} {msg}", self.pal.ok.on("✓"));
         flush();
     }
 
     pub fn err(&mut self, msg: &str) {
-        println!("{} {msg}", "✗".red());
+        println!("{} {msg}", self.pal.err.on("✗"));
         flush();
     }
 
@@ -39,20 +43,22 @@ impl Simple {
     }
 
     pub fn reasoning(&mut self, text: &str) {
-        print!("{}", text.italic().dimmed());
+        print!("{}", self.pal.thought.on(text).italic());
         flush();
     }
 
     pub fn tool_call(&mut self, calls_summary: &str) {
-        println!("{} {}", "▸".cyan(), calls_summary);
+        println!("{} {}", self.pal.tool_call.on("▸"), calls_summary);
         flush();
     }
 
     pub fn tool_result(&mut self, name: &str, preview: &str, byte_len: usize) {
+        let arrow = self.pal.tool_result.on("▾");
+        let name_s = self.pal.tool_result.on(name);
         if byte_len > 500 {
-            println!("{} {} ({} B): {} …", "▾".bright_black(), name.bright_black(), byte_len, preview);
+            println!("{} {} ({} B): {} …", arrow, name_s, byte_len, preview);
         } else {
-            println!("{} {}: {}", "▾".bright_black(), name.bright_black(), preview);
+            println!("{} {}: {}", arrow, name_s, preview);
         }
         flush();
     }

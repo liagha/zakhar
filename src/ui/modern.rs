@@ -4,9 +4,11 @@ use std::time::Instant;
 use colored::Colorize;
 
 use super::markdown;
+use super::palette::Palette;
 
-pub struct Modern {
-    md: markdown::Stream,
+pub struct Modern<'a> {
+    md: markdown::Stream<'a>,
+    pal: &'a Palette,
     has_status: bool,
     reason: String,
     reason_dirty: bool,
@@ -18,10 +20,11 @@ pub struct Modern {
 
 const PREVIEW_TICK: std::time::Duration = std::time::Duration::from_millis(30);
 
-impl Modern {
-    pub fn new() -> Self {
+impl<'a> Modern<'a> {
+    pub fn new(pal: &'a Palette) -> Self {
         Self {
-            md: markdown::Stream::new(),
+            md: markdown::Stream::new(pal),
+            pal,
             has_status: false,
             reason: String::new(),
             reason_dirty: false,
@@ -34,32 +37,32 @@ impl Modern {
 
     pub fn status(&mut self, msg: &str) {
         self.clear_status();
-        print!("\r\x1b[2K{}", format!("· {msg}").bright_black());
+        print!("\r\x1b[2K{}", self.pal.status.on(&format!("· {msg}")));
         self.has_status = true;
         flush();
     }
 
     pub fn ok(&mut self, msg: &str) {
         self.clear_status();
-        println!("{} {msg}", "✓".green());
+        println!("{} {msg}", self.pal.ok.on("✓"));
         flush();
     }
 
     pub fn err(&mut self, msg: &str) {
         self.clear_status();
-        println!("{} {msg}", "✗".red());
+        println!("{} {msg}", self.pal.err.on("✗"));
         flush();
     }
 
     pub fn note(&mut self, msg: &str) {
         self.clear_status();
-        println!("{}", msg.bright_black());
+        println!("{}", self.pal.note.on(msg));
         flush();
     }
 
     pub fn summary(&mut self, msg: &str) {
         self.clear_status();
-        println!("{}", msg.dimmed());
+        println!("{}", self.pal.summary.on(msg));
         flush();
     }
 
@@ -79,28 +82,24 @@ impl Modern {
         self.clear_status();
         self.clear_preview();
         self.end_line();
-        println!("{} {}", "▸".bright_cyan(), calls_summary.bright_black());
+        println!(
+            "{} {}",
+            self.pal.tool_call.on("▸"),
+            self.pal.tool_result.on(calls_summary)
+        );
         flush();
     }
 
     pub fn tool_result(&mut self, name: &str, preview: &str, byte_len: usize) {
         self.clear_status();
         self.clear_preview();
+        let arrow = self.pal.tool_result.on("▾");
+        let name_s = self.pal.tool_result.on(name);
+        let preview_s = self.pal.tool_result.on(preview);
         if byte_len > 500 {
-            println!(
-                "{} {} ({} B): {} …",
-                "▾".bright_black(),
-                name.bright_black(),
-                byte_len,
-                preview.bright_black()
-            );
+            println!("{} {} ({} B): {} …", arrow, name_s, byte_len, preview_s);
         } else {
-            println!(
-                "{} {}: {}",
-                "▾".bright_black(),
-                name.bright_black(),
-                preview.bright_black()
-            );
+            println!("{} {}: {}", arrow, name_s, preview_s);
         }
         flush();
     }
@@ -166,7 +165,7 @@ impl Modern {
 
     fn end_line(&mut self) {
         if self.mark_printed {
-            print!("\n");
+            println!();
             self.mark_printed = false;
             flush();
         }
@@ -186,9 +185,9 @@ impl Modern {
         if !due && !grew {
             return;
         }
-        let rendered = markdown::preview(&trunc_to_cols(&pending, self.cols - 1));
+        let rendered = markdown::preview(&trunc_to_cols(&pending, self.cols - 1), self.pal);
         self.clear_preview();
-        print!("{}", rendered.dimmed());
+        print!("{}", self.pal.preview.on(&rendered));
         self.preview = pending;
         self.preview_at = Some(Instant::now());
         flush();
@@ -205,11 +204,9 @@ impl Modern {
 
     fn flush_reason(&mut self) {
         if !self.reason.is_empty() {
-            println!(
-                "{} {}",
-                "Thought:".bright_black().italic(),
-                self.reason.bright_black().italic()
-            );
+            let label = self.pal.thought.on("Thought:").italic();
+            let body = self.pal.thought.on(&self.reason).italic();
+            println!("{} {}", label, body);
         }
         self.reason.clear();
         self.reason_dirty = false;

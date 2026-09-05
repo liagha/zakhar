@@ -19,6 +19,31 @@ pub struct Config {
     pub default_provider: Option<String>,
     #[serde(default)]
     pub default_model: Option<String>,
+    #[serde(default)]
+    pub ui: UiColors,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct UiColors {
+    pub status: Option<String>,
+    pub ok: Option<String>,
+    pub err: Option<String>,
+    pub note: Option<String>,
+    pub summary: Option<String>,
+    pub thought: Option<String>,
+    pub tool_call: Option<String>,
+    pub tool_result: Option<String>,
+    pub preview: Option<String>,
+    pub code: Option<String>,
+    pub link: Option<String>,
+    pub url: Option<String>,
+    pub h1: Option<String>,
+    pub h2: Option<String>,
+    pub h3: Option<String>,
+    pub list: Option<String>,
+    pub quote: Option<String>,
+    pub rule: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -63,6 +88,36 @@ impl Config {
         } else {
             Ok(Self::default())
         }
+    }
+
+    pub fn palette(&self) -> crate::ui::palette::Palette {
+        let mut map = HashMap::new();
+        let ui = &self.ui;
+        for (k, v) in [
+            ("status", &ui.status),
+            ("ok", &ui.ok),
+            ("err", &ui.err),
+            ("note", &ui.note),
+            ("summary", &ui.summary),
+            ("thought", &ui.thought),
+            ("tool_call", &ui.tool_call),
+            ("tool_result", &ui.tool_result),
+            ("preview", &ui.preview),
+            ("code", &ui.code),
+            ("link", &ui.link),
+            ("url", &ui.url),
+            ("h1", &ui.h1),
+            ("h2", &ui.h2),
+            ("h3", &ui.h3),
+            ("list", &ui.list),
+            ("quote", &ui.quote),
+            ("rule", &ui.rule),
+        ] {
+            if let Some(val) = v {
+                map.insert(k.to_string(), val.clone());
+            }
+        }
+        crate::ui::palette::Palette::from(&map)
     }
 }
 

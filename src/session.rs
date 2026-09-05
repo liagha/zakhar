@@ -13,6 +13,12 @@ pub struct Session {
     pub messages: Vec<Message>,
 }
 
+impl Default for Session {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Session {
     pub fn new() -> Self {
         Self {
@@ -58,17 +64,15 @@ pub fn list() -> Vec<SessionInfo> {
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for e in entries.flatten() {
             let p = e.path();
-            if p.extension().map(|ext| ext == "json").unwrap_or(false) {
-                if let Ok(text) = std::fs::read_to_string(&p) {
-                    if let Ok(s) = serde_json::from_str::<Session>(&text) {
+            if p.extension().map(|ext| ext == "json").unwrap_or(false)
+                && let Ok(text) = std::fs::read_to_string(&p)
+                    && let Ok(s) = serde_json::from_str::<Session>(&text) {
                         sessions.push(SessionInfo {
                             id: s.id,
                             created_at: s.created_at,
                             message_count: s.messages.len(),
                         });
                     }
-                }
-            }
         }
     }
     sessions.sort_by(|a, b| b.created_at.cmp(&a.created_at));

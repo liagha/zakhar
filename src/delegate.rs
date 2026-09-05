@@ -26,11 +26,11 @@ fn exec_with_retry(invoke: &Invoke, name: &str, args: &Value) -> String {
         match edit_retry(args, &current) {
             EditRetry::Ok(out) => return out,
             EditRetry::Retry => {
-                println!("{}", format!("{} {}", "↺ retry".bold(), "old_string now matches".dimmed()));
+                println!("{} {}", "↺ retry".bold(), "old_string now matches".dimmed());
                 current = invoke.exec(name, args);
             }
             EditRetry::Boosted(out) => {
-                println!("{}", format!("{} {}", "↻ context".bold(), "attached file content to error".dimmed()));
+                println!("{} {}", "↻ context".bold(), "attached file content to error".dimmed());
                 return out;
             }
         }

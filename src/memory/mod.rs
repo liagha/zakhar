@@ -118,9 +118,8 @@ mod tests {
             let labels: Vec<&str> = blocks.iter().map(|(l, _)| l.as_str()).collect();
             let recent = labels.iter().position(|l| *l == "recent");
             let memory = labels.iter().position(|l| *l == "memory");
-            match (recent, memory) {
-                (Some(r), Some(m)) => assert!(r < m, "recent must precede memory: {labels:?}"),
-                _ => {}
+            if let (Some(r), Some(m)) = (recent, memory) {
+                assert!(r < m, "recent must precede memory: {labels:?}")
             }
         }));
         let _ = std::env::set_current_dir(&orig);

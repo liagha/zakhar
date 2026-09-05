@@ -115,6 +115,23 @@ user_agent = "opencode/1.18.25"
 models = ["big-pickle", "deepseek-v4-flash-free", "mimo-v2.5-free"]
 ```
 
+## Colors
+
+UI colors are configured per-role in the `[ui]` section. Each key accepts a
+color name (`green`, `bright_black`, `cyan`) or a hex value (`#ff8800`).
+`dim` renders the dimmed style, and `plain`/`none` disables color for that
+role. Unset roles keep their defaults.
+
+```toml
+[ui]
+ok = "green"
+err = "#ff3333"
+code = "#6b7280"
+link = "bright_blue"
+summary = "dim"
+quote = "none"
+```
+
 ## Model routing
 
 Different jobs want different models. Two config sections control which

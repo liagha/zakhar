@@ -65,3 +65,12 @@ provider = "zen"
 model = "mimo-v2.5-free"
 hints = ["image", "photo", "screenshot", "picture", "diagram", "logo"]
 # fallback = ["zai/glm-4.6v-flash"]
+
+# UI colors. Each key takes a color name or hex; "dim" dims, "plain"/"none" disables.
+# Available roles: status, ok, err, note, summary, thought, tool_call, tool_result,
+# preview, code, link, url, h1, h2, h3, list, quote, rule
+[ui]
+ok = "green"
+err = "red"
+code = "dim"
+link = "blue"

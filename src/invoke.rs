@@ -60,6 +60,12 @@ pub struct Invoke {
     tools: HashMap<String, Box<dyn Handler>>,
 }
 
+impl Default for Invoke {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Invoke {
     pub fn new() -> Self {
         let mut tools = HashMap::new();

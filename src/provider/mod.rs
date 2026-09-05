@@ -39,6 +39,12 @@ pub struct Registry {
     providers: Vec<Arc<dyn Provider>>,
 }
 
+impl Default for Registry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Registry {
     pub fn new() -> Self {
         Self {

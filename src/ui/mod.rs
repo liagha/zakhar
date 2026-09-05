@@ -1,21 +1,23 @@
 pub mod markdown;
 pub mod modern;
+pub mod palette;
 pub mod simple;
 
 use modern::Modern;
+use palette::Palette;
 use simple::Simple;
 
-pub enum Ui {
-    Simple(Simple),
-    Modern(Modern),
+pub enum Ui<'a> {
+    Simple(Simple<'a>),
+    Modern(Modern<'a>),
 }
 
-impl Ui {
-    pub fn new(simple: bool) -> Self {
+impl<'a> Ui<'a> {
+    pub fn new(simple: bool, palette: &'a Palette) -> Self {
         if simple {
-            Ui::Simple(Simple::new())
+            Ui::Simple(Simple::new(palette))
         } else {
-            Ui::Modern(Modern::new())
+            Ui::Modern(Modern::new(palette))
         }
     }
 

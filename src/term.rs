@@ -11,12 +11,12 @@ pub fn read_key() -> char {
         raw.c_lflag &= !(libc::ICANON | libc::ECHO);
         raw.c_cc[VMIN] = 1;
         raw.c_cc[VTIME] = 0;
-        libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &mut raw);
+        libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &raw);
 
         let mut buf = [0u8; 1];
         std::io::stdin().read_exact(&mut buf).ok();
 
-        libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &mut orig);
+        libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &orig);
 
         buf[0] as char
     }

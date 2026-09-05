@@ -81,6 +81,35 @@ impl Handler for Skill {
     }
 }
 
+pub struct Control;
+impl Handler for Control {
+    fn spec(&self) -> Tool {
+        def("control", "Control zakhar itself. action='allow' stops asking before mutating tools (use when the user says 'you have my permission'); action='models' lists available models; action='chat' opens the interactive chat with an optional message.", json!({
+            "type": "object",
+            "properties": {
+                "action": { "type": "string", "enum": ["allow", "models", "chat"], "description": "What to control" },
+                "message": { "type": "string", "description": "Initial chat message for action=chat" }
+            },
+            "required": ["action"]
+        }))
+    }
+    fn run(&self, args: &Value) -> anyhow::Result<String> {
+        match args["action"].as_str().unwrap_or("") {
+            "allow" => {
+                crate::invoke::grant();
+                Ok("permission granted: will not ask before mutating tools".to_string())
+            }
+            "models" => crate::invoke::models(),
+            "chat" => {
+                let message = args.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                crate::invoke::open(message);
+                Ok("opening interactive chat".to_string())
+            }
+            a => anyhow::bail!("unknown action {a}"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,34 +142,5 @@ mod tests {
             let err = tool.run(&json!({"name": "nope"})).unwrap_err();
             assert!(err.to_string().contains("'nope' not found"));
         });
-    }
-}
-
-pub struct Control;
-impl Handler for Control {
-    fn spec(&self) -> Tool {
-        def("control", "Control zakhar itself. action='allow' stops asking before mutating tools (use when the user says 'you have my permission'); action='models' lists available models; action='chat' opens the interactive chat with an optional message.", json!({
-            "type": "object",
-            "properties": {
-                "action": { "type": "string", "enum": ["allow", "models", "chat"], "description": "What to control" },
-                "message": { "type": "string", "description": "Initial chat message for action=chat" }
-            },
-            "required": ["action"]
-        }))
-    }
-    fn run(&self, args: &Value) -> anyhow::Result<String> {
-        match args["action"].as_str().unwrap_or("") {
-            "allow" => {
-                crate::invoke::grant();
-                Ok("permission granted: will not ask before mutating tools".to_string())
-            }
-            "models" => crate::invoke::models(),
-            "chat" => {
-                let message = args.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                crate::invoke::open(message);
-                Ok("opening interactive chat".to_string())
-            }
-            a => anyhow::bail!("unknown action {a}"),
-        }
     }
 }

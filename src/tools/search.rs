@@ -50,9 +50,7 @@ impl Handler for Search {
         );
 
         let client = reqwest::blocking::Client::builder()
-            .user_agent(format!(
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            ))
+            .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36".to_string())
             .redirect(reqwest::redirect::Policy::limited(5))
             .timeout(std::time::Duration::from_secs(15))
             .build()?;
@@ -110,41 +108,21 @@ fn html_entities(s: &str) -> String {
 
 fn parse_results(html: &str) -> Vec<SearchResult> {
     let mut results = Vec::new();
+    let re_url = Regex::new(r#"<a href="(https?://[^"]+)""#).ok();
+    let re_title = Regex::new(r#"<div class="title[^"]*"[^>]*>(.*?)</div>"#).ok();
+    let re_snippet = Regex::new(r#"class="content[^"]*">(.*?)</div>"#).ok();
 
     let blocks: Vec<&str> = html.split(r#"<div class="snippet svelte"#).collect();
 
     for block in blocks.into_iter().skip(1) {
-        let url = match Regex::new(r#"<a href="(https?://[^"]+)""#) {
-            Ok(re) => re
-                .captures(block)
-                .and_then(|c| c.get(1))
-                .map(|m| m.as_str().to_string())
-                .unwrap_or_default(),
-            Err(_) => continue,
+        let url = capture(re_url.as_ref(), block);
+        let title = {
+            let m = capture(re_title.as_ref(), block);
+            html_entities(&strip_tags(&m)).trim().to_string()
         };
-
-        let title = match Regex::new(r#"<div class="title[^"]*"[^>]*>(.*?)</div>"#) {
-            Ok(re) => re
-                .captures(block)
-                .and_then(|c| c.get(1))
-                .map(|m| {
-                    let t = strip_tags(m.as_str());
-                    html_entities(&t).trim().to_string()
-                })
-                .unwrap_or_default(),
-            Err(_) => continue,
-        };
-
-        let snippet = match Regex::new(r#"class="content[^"]*">(.*?)</div>"#) {
-            Ok(re) => re
-                .captures(block)
-                .and_then(|c| c.get(1))
-                .map(|m| {
-                    let t = strip_tags(m.as_str());
-                    html_entities(&t).trim().to_string()
-                })
-                .unwrap_or_default(),
-            Err(_) => continue,
+        let snippet = {
+            let m = capture(re_snippet.as_ref(), block);
+            html_entities(&strip_tags(&m)).trim().to_string()
         };
 
         if !title.is_empty() && !url.is_empty() {
@@ -153,14 +131,19 @@ fn parse_results(html: &str) -> Vec<SearchResult> {
                 url,
                 snippet,
             });
-        }
-
-        if results.len() >= 10 {
-            break;
+            if results.len() >= 10 {
+                break;
+            }
         }
     }
-
     results
+}
+
+fn capture(re: Option<&Regex>, text: &str) -> String {
+    re.and_then(|re| re.captures(text))
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().to_string())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

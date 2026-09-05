@@ -26,7 +26,8 @@ pub async fn chat(
 ) -> anyhow::Result<()> {
     let cfg = Config::load()?;
     let registry = registry::build(&cfg);
-    let mut ui = Ui::new(simple);
+    let pal = cfg.palette();
+    let mut ui = Ui::new(simple, &pal);
 
     let heavy = crate::capabilities::resolve(&cfg, "code", "heavy");
     let provider_id = provider.unwrap_or(heavy.provider);

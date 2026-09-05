@@ -400,7 +400,7 @@ mod tests {
         )
         .unwrap();
         let migrated = {
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| migrate_once()));
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(migrate_once));
             std::env::set_current_dir(&cwd).unwrap();
             result.unwrap()
         };

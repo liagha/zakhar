@@ -234,7 +234,7 @@ fn apply(root: &Path, events: &[episodic::Event], store: &[Item], plan: &Plan) -
     let mut added = 0;
     for draft in &plan.add {
         let summary = draft.summary.trim();
-        if summary.is_empty() || summary.chars().count() > MAX_SUMMARY || duplicate(&summary, &list, false) {
+        if summary.is_empty() || summary.chars().count() > MAX_SUMMARY || duplicate(summary, &list, false) {
             continue;
         }
         let refs = draft
@@ -246,16 +246,16 @@ fn apply(root: &Path, events: &[episodic::Event], store: &[Item], plan: &Plan) -
         let mut tags = draft.tags.clone();
         tags.sort();
         tags.dedup();
-        list.push(Item::brand(kind, &summary, draft.detail.clone(), tags, refs, SOURCE, false));
+        list.push(Item::brand(kind, summary, draft.detail.clone(), tags, refs, SOURCE, false));
         added += 1;
     }
     let mut loops = 0;
     for draft in &plan.loops {
         let summary = draft.summary.trim();
-        if summary.is_empty() || duplicate(&summary, &list, true) {
+        if summary.is_empty() || duplicate(summary, &list, true) {
             continue;
         }
-        list.push(Item::brand(LOOP_KIND, &summary, None, Vec::new(), Vec::new(), SOURCE, true));
+        list.push(Item::brand(LOOP_KIND, summary, None, Vec::new(), Vec::new(), SOURCE, true));
         loops += 1;
     }
     knowledge::decay(&mut list);
@@ -345,7 +345,7 @@ fn parse_json(raw: &str) -> anyhow::Result<serde_json::Value> {
                     oneline = &oneline[..end];
                 }
             }
-            None => oneline = &stripped,
+            None => oneline = stripped,
         }
     }
     let start = oneline.find('{').ok_or_else(|| anyhow::anyhow!("no object"))?;

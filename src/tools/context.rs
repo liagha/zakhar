@@ -61,7 +61,7 @@ impl Handler for Context {
                 match item {
                     Some(item) => {
                         let _ = knowledge::touch(&item.id);
-                        Ok(item.detail.unwrap_or_else(|| item.summary))
+                        Ok(item.detail.unwrap_or(item.summary))
                     }
                     None => Ok(format!(
                         "context lookup: no key '{key}' saved yet. Treat this as 'not in stored memory' — do NOT say you have nothing or ask for the value if the user just provided it; use what the user said in the conversation."

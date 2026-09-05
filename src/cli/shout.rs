@@ -16,7 +16,8 @@ use crate::ui::Ui;
 pub async fn shout(phrase: String) -> anyhow::Result<()> {
     let cfg = Config::load()?;
     let registry = registry::build(&cfg);
-    let mut ui = Ui::new(false);
+    let pal = cfg.palette();
+    let mut ui = Ui::new(false, &pal);
 
     let cap = crate::capabilities::detect(&cfg, &phrase);
     let chosen = crate::capabilities::resolve(&cfg, &cap, "heavy");
@@ -100,7 +101,7 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
 }
 
 async fn run_tool_loop(
-    ui: &mut Ui,
+    ui: &mut Ui<'_>,
     runner: &mut Runner<'_>,
     cfg: &Config,
     inv: &Invoke,

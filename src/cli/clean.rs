@@ -9,7 +9,7 @@ pub fn paths_cmd() {
     println!("  profile     {}", paths::profile_path().display());
     println!("  sessions    {}", paths::sessions_dir().display());
     println!("  reminders   {}", paths::reminders_path().display());
-    if let Some(b) = std::env::current_exe().ok() {
+    if let Ok(b) = std::env::current_exe() {
         println!("  binary      {}", b.display());
     }
     println!();

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::paths;
 
@@ -17,7 +17,7 @@ fn migrate() -> anyhow::Result<()> {
     let old = paths::old_locations();
     let mut moved_any = false;
 
-    if let Some(c) = old.get(0) {
+    if let Some(c) = old.first() {
         if c.join("config.toml").exists() {
             std::fs::create_dir_all(paths::config_dir())?;
             move_file(&c.join("config.toml"), &paths::config_path())?;
@@ -74,7 +74,7 @@ fn move_file(from: &PathBuf, to: &PathBuf) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn move_dir_contents(from: &PathBuf, to: &PathBuf) -> anyhow::Result<()> {
+fn move_dir_contents(from: &Path, to: &Path) -> anyhow::Result<()> {
     for entry in std::fs::read_dir(from)? {
         let entry = entry?;
         let dest = to.join(entry.file_name());
@@ -90,7 +90,7 @@ fn move_dir_contents(from: &PathBuf, to: &PathBuf) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn is_empty(dir: &PathBuf) -> bool {
+fn is_empty(dir: &Path) -> bool {
     std::fs::read_dir(dir)
         .map(|mut r| r.next().is_none())
         .unwrap_or(true)
