@@ -27,6 +27,8 @@ pub struct Level {
     pub provider: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
+    #[serde(default)]
+    pub fallback: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -37,6 +39,8 @@ pub struct Capability {
     pub model: Option<String>,
     #[serde(default)]
     pub hints: Vec<String>,
+    #[serde(default)]
+    pub fallback: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -100,16 +100,10 @@ async fn run_job(job: Job) {
 async fn run_one(job: &Job) -> anyhow::Result<String> {
     let cfg = crate::config::Config::load()?;
     let registry = crate::registry::build(&cfg);
-    let chosen = crate::capabilities::resolve(&cfg, "summary", "light");
-    let pid = chosen.provider;
-    let provider = registry
-        .get(&pid)
-        .ok_or_else(|| anyhow::anyhow!("unknown provider: {pid}"))?;
-    let model = (!chosen.model.is_empty())
-        .then_some(chosen.model.clone())
-        .or_else(|| cfg.default_model.clone())
-        .or_else(|| provider.list_models().first().cloned())
-        .unwrap_or_default();
+    let routes = crate::capabilities::chain(&cfg, "summary", "light");
+    let provider_box = crate::fallback::build(&registry, &routes, crate::fallback::Decide::Auto)?;
+    let provider: &dyn crate::provider::Provider = provider_box.as_ref();
+    let model = routes.first().map(|r| r.model.clone()).unwrap_or_default();
     match job.kind.as_str() {
         "mind" => mind::run(&job.root, provider, &model).await?,
         _ => {

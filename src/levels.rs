@@ -22,6 +22,15 @@ pub struct Resolved {
     pub model: String,
 }
 
+impl Resolved {
+    pub fn blank() -> Self {
+        Self {
+            provider: String::new(),
+            model: String::new(),
+        }
+    }
+}
+
 pub fn resolve(cfg: &Config, name: &str) -> Resolved {
     match cfg.levels.get(name) {
         Some(level) => Resolved {
@@ -41,4 +50,14 @@ pub fn resolve(cfg: &Config, name: &str) -> Resolved {
             model: cfg.default_model.clone().unwrap_or_default(),
         },
     }
+}
+
+pub fn chain(cfg: &Config, name: &str) -> Vec<Resolved> {
+    let primary = resolve(cfg, name);
+    let explicit = cfg
+        .levels
+        .get(name)
+        .map(|l| l.fallback.clone())
+        .unwrap_or_default();
+    crate::fallback::chain(cfg, primary, &explicit)
 }

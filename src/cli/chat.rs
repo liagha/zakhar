@@ -30,9 +30,6 @@ pub async fn chat(
 
     let heavy = crate::capabilities::resolve(&cfg, "code", "heavy");
     let provider_id = provider.unwrap_or(heavy.provider);
-    let p = registry
-        .get(&provider_id)
-        .ok_or_else(|| anyhow::anyhow!("unknown provider: {provider_id}"))?;
 
     let agent_cfg = model
         .as_ref()
@@ -42,7 +39,30 @@ pub async fn chat(
     let model = model
         .or(agent_cfg.map(|a| a.model.clone()))
         .or((!heavy.model.is_empty()).then_some(heavy.model.clone()))
-        .unwrap_or_else(|| p.list_models().first().cloned().unwrap_or_default());
+        .unwrap_or_else(|| {
+            registry
+                .get(&provider_id)
+                .map(|p| p.list_models().first().cloned().unwrap_or_default())
+                .unwrap_or_default()
+        });
+
+    let primary = crate::levels::Resolved {
+        provider: provider_id.clone(),
+        model: model.clone(),
+    };
+    let explicit = cfg
+        .capabilities
+        .get("code")
+        .map(|c| c.fallback.clone())
+        .unwrap_or_default();
+    let routes = crate::fallback::chain(&cfg, primary, &explicit);
+    let decide = if auto_approve {
+        crate::fallback::Decide::Auto
+    } else {
+        crate::fallback::Decide::Ask
+    };
+    let provider_box = crate::fallback::build(&registry, &routes, decide)?;
+    let p: &dyn crate::provider::Provider = provider_box.as_ref();
 
     let invoke = if invoke_flag {
         Some(Invoke::new())

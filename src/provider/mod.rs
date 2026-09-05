@@ -1,4 +1,5 @@
 use std::pin::Pin;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::Stream;
@@ -35,7 +36,7 @@ pub trait Provider: Send + Sync {
 }
 
 pub struct Registry {
-    providers: Vec<Box<dyn Provider>>,
+    providers: Vec<Arc<dyn Provider>>,
 }
 
 impl Registry {
@@ -45,8 +46,9 @@ impl Registry {
         }
     }
 
+    #[allow(clippy::new_without_default)]
     pub fn register(&mut self, provider: Box<dyn Provider>) {
-        self.providers.push(provider);
+        self.providers.push(Arc::from(provider));
     }
 
     pub fn get(&self, id: &str) -> Option<&dyn Provider> {
@@ -54,6 +56,13 @@ impl Registry {
             .iter()
             .find(|p| p.id() == id)
             .map(|p| p.as_ref())
+    }
+
+    pub fn arc(&self, id: &str) -> Option<Arc<dyn Provider>> {
+        self.providers
+            .iter()
+            .find(|p| p.id() == id)
+            .cloned()
     }
 
     pub fn ids(&self) -> Vec<String> {

@@ -61,3 +61,31 @@ pub fn detect(cfg: &Config, text: &str) -> String {
     }
     "code".to_string()
 }
+
+/// Full candidate chain for a capability: primary route, the capability's
+/// explicit `fallback` list, then every other configured provider.
+pub fn chain(cfg: &Config, name: &str, fallback_level: &str) -> Vec<Resolved> {
+    let primary = resolve(cfg, name, fallback_level);
+    let explicit = cfg
+        .capabilities
+        .get(name)
+        .map(|c| c.fallback.clone())
+        .unwrap_or_default();
+    crate::fallback::chain(cfg, primary, &explicit)
+}
+
+/// Chain for an agent: explicitly pinned model, capability chain, or plain
+/// provider defaults, in that order of preference.
+pub fn agent_chain(
+    cfg: &Config,
+    agent_model: Option<&str>,
+) -> Vec<Resolved> {
+    let primary = match agent_model {
+        Some(m) if !m.is_empty() => Resolved {
+            provider: cfg.default_provider.clone().unwrap_or_default(),
+            model: m.to_string(),
+        },
+        _ => crate::capabilities::resolve(cfg, "code", "heavy"),
+    };
+    crate::fallback::chain(cfg, primary, &[])
+}

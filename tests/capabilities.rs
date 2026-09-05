@@ -26,6 +26,7 @@ fn cfg() -> Config {
         Level {
             provider: None,
             model: Some("glm-4.7-flash".to_string()),
+            fallback: Vec::new(),
         },
     );
     levels.insert(
@@ -33,6 +34,7 @@ fn cfg() -> Config {
         Level {
             provider: None,
             model: Some("glm-4.5-flash".to_string()),
+            fallback: Vec::new(),
         },
     );
 
@@ -43,6 +45,7 @@ fn cfg() -> Config {
             provider: None,
             model: Some("glm-4.7-flash".to_string()),
             hints: vec!["refactor".to_string(), "compile".to_string(), ".rs".to_string()],
+            fallback: Vec::new(),
         },
     );
     capabilities.insert(
@@ -51,6 +54,7 @@ fn cfg() -> Config {
             provider: None,
             model: Some("glm-4.6v-flash".to_string()),
             hints: vec!["image".to_string(), "photo".to_string(), "screenshot".to_string()],
+            fallback: Vec::new(),
         },
     );
 

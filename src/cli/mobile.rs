@@ -25,19 +25,9 @@ pub async fn mobile(
     } else {
         let cfg = crate::config::Config::load()?;
         let cap = crate::capabilities::detect(&cfg, &message);
-        let chosen = crate::capabilities::resolve(&cfg, &cap, "heavy");
-        let pid = chosen.provider;
-        let pcfg = cfg
-            .providers
-            .get(&pid)
-            .ok_or_else(|| anyhow::anyhow!("unknown provider: {pid}"))?;
-        let mut pcfg = pcfg.clone();
-        pcfg.api_key = crate::registry::resolve_key(&pcfg);
-        if !chosen.model.is_empty() {
-            pcfg.default_model = chosen.model.clone();
-            pcfg.models = vec![chosen.model.clone()];
-        }
-        Box::new(crate::provider::openai::OpenAI::new(&pid, &pcfg))
+        let routes = crate::capabilities::chain(&cfg, &cap, "heavy");
+        let registry = crate::registry::build(&cfg);
+        crate::fallback::build(&registry, &routes, crate::fallback::Decide::Auto)?
     };
 
     let id = crate::mobile::start(provider, &messages, auto_approve);

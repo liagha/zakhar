@@ -21,14 +21,28 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
     let cap = crate::capabilities::detect(&cfg, &phrase);
     let chosen = crate::capabilities::resolve(&cfg, &cap, "heavy");
     let provider_id = chosen.provider;
-    let p = registry
-        .get(&provider_id)
-        .ok_or_else(|| anyhow::anyhow!("unknown provider: {provider_id}"))?;
 
     let model = (!chosen.model.is_empty())
         .then_some(chosen.model.clone())
-        .or_else(|| p.list_models().first().cloned())
+        .or_else(|| {
+            registry
+                .get(&provider_id)
+                .and_then(|p| p.list_models().first().cloned())
+        })
         .unwrap_or_default();
+
+    let primary = crate::levels::Resolved {
+        provider: provider_id.clone(),
+        model: model.clone(),
+    };
+    let explicit = cfg
+        .capabilities
+        .get(&cap)
+        .map(|c| c.fallback.clone())
+        .unwrap_or_default();
+    let routes = crate::fallback::chain(&cfg, primary, &explicit);
+    let provider_box = crate::fallback::build(&registry, &routes, crate::fallback::Decide::Ask)?;
+    let p: &dyn crate::provider::Provider = provider_box.as_ref();
     crate::invoke::seed_models(p.list_models());
 
     let inv = Invoke::new();

@@ -14,6 +14,7 @@ pub mod capabilities;
 pub mod cli;
 pub mod config;
 pub mod delegate;
+pub mod fallback;
 pub mod handler;
 pub mod hooks;
 pub mod invoke;

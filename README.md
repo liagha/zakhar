@@ -130,17 +130,41 @@ provider+model a task goes to:
 provider = "zai"
 model = "glm-4.7-flash"
 hints = ["refactor", "compile", "debug", "function", "class", "module"]
+fallback = ["opencode/big-pickle"]
 
 [capabilities.vision]
 provider = "zai"
 model = "glm-4.6v-flash"
 hints = ["image", "photo", "screenshot", "picture", "diagram"]
+fallback = ["opencode/mimo-v2.5-free"]
 ```
 
 Resolution order: capability `provider`/`model` if set, otherwise the matching
 `[levels.*]` entry, otherwise `default_provider`/`default_model`. Fields not
 configured fall through to `default_model`, and agents can still pin their own
 `model` in `[agents.*]`. See `zakhar.models` for a live view of both tables.
+
+### Fallback chains
+
+Every route is a fallback chain. The resolved `provider/model` is tried first;
+if it fails at request time (overloaded, unauthorized, unreachable) the next
+candidate is tried:
+
+1. the capability's own `fallback = ["provider/model", ...]` entries (or the
+   level's `fallback` list when the task came through a level),
+2. then every other configured provider, in provider-name order, using its own
+   `default_model`.
+
+So a config with a single provider behaves exactly as before, and one with
+several gets automatic fail-over for free — no per-route config required. Each
+entry is `"provider"` or `"provider/model"` (`"provider"` uses that provider's
+default model).
+
+The switch policy is per-call-site: interactive sessions (`chat`, a phrase in
+`shout`) ask `fall back to opencode/big-pickle? [y/N]` before switching;
+background work (daemon compaction, mobile turns) switches silently. The choice
+is remembered for the rest of the turn, so a later failure on the same
+candidate falls back again.
 
 ## Uninstall
 

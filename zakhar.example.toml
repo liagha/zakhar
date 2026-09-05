@@ -18,6 +18,13 @@ models = [
     "laguna-s-2.1-free",
 ]
 
+[providers.zai]
+api_type = "openai"
+base_url = "https://api.z.ai/api/paas/v4"
+api_key = "{env:ZAI_API_KEY}"
+default_model = "glm-4.7-flash"
+models = ["glm-4.7-flash", "glm-4.5-flash", "glm-4.6v-flash"]
+
 [agents.default]
 model = "big-pickle"
 prompt = "You are zakhar, the primary coding assistant. You coordinate specialists via the delegate tool when a task fits another agent better."
@@ -42,6 +49,7 @@ tools = ["read", "grep", "glob"]
 # default_provider/default_model below.
 [levels.light]
 model = "deepseek-v4-flash-free"
+# fallback = ["zai/glm-4.5-flash"]   # optional; chain continues to other providers anyway
 
 [levels.heavy]
 model = "big-pickle"
@@ -50,8 +58,10 @@ model = "big-pickle"
 [capabilities.code]
 model = "big-pickle"
 hints = ["refactor", "compile", "debug", "function", "class", "module", "build"]
+# fallback = ["zai/glm-4.7-flash", "zen/deepseek-v4-flash-free"]
 
 [capabilities.vision]
 provider = "zen"
 model = "mimo-v2.5-free"
 hints = ["image", "photo", "screenshot", "picture", "diagram", "logo"]
+# fallback = ["zai/glm-4.6v-flash"]

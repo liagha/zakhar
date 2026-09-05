@@ -26,6 +26,7 @@ fn cfg() -> Config {
         Level {
             provider: None,
             model: Some("glm-4.5-flash".to_string()),
+            fallback: Vec::new(),
         },
     );
     levels.insert(
@@ -33,6 +34,7 @@ fn cfg() -> Config {
         Level {
             provider: None,
             model: Some("glm-4.7-flash".to_string()),
+            fallback: Vec::new(),
         },
     );
 

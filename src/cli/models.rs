@@ -41,7 +41,12 @@ pub async fn models(provider: Option<String>) -> anyhow::Result<()> {
                 .unwrap_or_default();
             let hints = cap.hints.join(", ");
             let hint_note = if hints.is_empty() { String::new() } else { format!("  (hints: {hints})") };
-            println!("  {name} → {provider}/{model}{hint_note}");
+            let fb = if cap.fallback.is_empty() {
+                String::new()
+            } else {
+                format!("  fallback: {}", cap.fallback.join(", "))
+            };
+            println!("  {name} → {provider}/{model}{hint_note}{fb}");
         }
     }
     Ok(())
