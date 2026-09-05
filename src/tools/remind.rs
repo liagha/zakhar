@@ -12,8 +12,8 @@ impl Handler for Remind {
             tool_type: "function".to_string(),
             function: crate::types::Function {
                 name: "remind".to_string(),
-                description: "Schedule a reminder. The current UTC time is given in the system \
-                              prompt; compute the RFC3339 UTC due timestamp from natural language \
+                description: "Schedule a reminder. First call the time tool to learn the current time, then \
+                              compute the RFC3339 UTC due timestamp from natural language \
                               (e.g. '11AM', 'in 30 min', 'every day'). Stores it so a background \
                               daemon fires it automatically."
                     .to_string(),

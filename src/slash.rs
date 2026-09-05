@@ -4,7 +4,6 @@ use crate::types::Tool;
 
 pub fn tool_def() -> Tool {
     let mut available = vec!["/clear", "/compact", "/init", "/help", "/agents", "/skills", "/memory", "/sessions", "/resume", "/kill"];
-    // discover custom commands
     for dir in [".opencode/commands", ".zakhar/commands", "commands"] {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for e in entries.flatten() {
@@ -76,7 +75,6 @@ fn dispatch(cmd: &str, args: &str, session: &mut crate::session::Session, runner
             new_msgs.extend(kept.into_iter().rev());
             session.messages = new_msgs.clone();
             if let Some(r) = runner {
-                // keep system + last keep from runner
                 let r_keep = r.messages().len().min(keep + 2);
                 let r_kept: Vec<_> = r.messages().iter().rev().take(r_keep).cloned().collect();
                 let mut r_new = Vec::new();
@@ -115,12 +113,11 @@ fn dispatch(cmd: &str, args: &str, session: &mut crate::session::Session, runner
             out.push_str("  /help - this help\n");
             out.push_str("  /agents - list agents\n");
             out.push_str("  /skills - list skills (same as skill tool)\n");
-            out.push_str("  /memory - browse/search/drop/compact memory\n");
+            out.push_str("  /memory - browse/search/drop/stale/compact memory\n");
             out.push_str("  /sessions - list saved sessions\n");
             out.push_str("  /resume <id> - resume a previous session\n");
             out.push_str("  /kill - kill all background tasks\n");
             out.push_str("  /kill <id> [...] - kill specific task(s)\n");
-            // custom
             for dir in [".opencode/commands", ".zakhar/commands"] {
                 if let Ok(entries) = std::fs::read_dir(dir) {
                     for e in entries.flatten() {
@@ -145,7 +142,6 @@ fn dispatch(cmd: &str, args: &str, session: &mut crate::session::Session, runner
             out
         }
         "/skills" => {
-            // reuse skill logic: list
             let mut out = String::new();
             for dir in [".opencode/skills", ".zakhar/skills", "skills"] {
                 if let Ok(entries) = std::fs::read_dir(dir) {
@@ -179,7 +175,6 @@ fn dispatch(cmd: &str, args: &str, session: &mut crate::session::Session, runner
             }
         }
         _ => {
-            // try custom slash file
             let name = cmd.trim_start_matches('/');
             let candidates = [
                 format!(".opencode/commands/{}.md", name),
@@ -209,13 +204,22 @@ fn memory(args: &str) -> String {
         "" => {
             out.push_str("## context keys\n");
             let keys = crate::tools::context::keys();
+            let stale = crate::tools::context::stale(30);
             if keys.is_empty() {
                 out.push_str("  (none)\n");
             } else {
                 for k in keys {
-                    let v = crate::tools::context::value(&k).unwrap_or_default();
-                    let preview: String = v.chars().take(60).collect();
-                    out.push_str(&format!("  - {k}: {preview}\n"));
+                    if let Some(m) = crate::tools::context::meta(&k) {
+                        let preview: String = m.value.chars().take(60).collect();
+                        let when: String = m.updated.chars().take(16).collect();
+                        let stale_mark = if stale.contains(&k) { " (stale)" } else { "" };
+                        let src = if m.source.is_empty() { "?" } else { &m.source };
+                        let access = match m.access_count {
+                            0 => String::new(),
+                            n => format!(", {n}×"),
+                        };
+                        out.push_str(&format!("  - {k}: {preview} (src: {src}, upd: {when}{access}){stale_mark}\n"));
+                    }
                 }
             }
             out.push_str("## recent events\n");
@@ -233,8 +237,23 @@ fn memory(args: &str) -> String {
         "compact" => {
             match crate::memory::episodic::compact() {
                 Ok(events) if events.is_empty() => out.push_str("nothing to compact (below threshold)"),
-                Ok(events) => out.push_str(&format!("archived {} events", events.len())),
+                Ok(events) => out.push_str(&format!("archived {} events; summary agent dispatched in the background", events.len())),
                 Err(e) => out.push_str(&format!("error: {e}")),
+            }
+        }
+        "stale" => {
+            let days = rest.parse().unwrap_or(30);
+            let stale = crate::tools::context::stale(days);
+            if stale.is_empty() {
+                out.push_str(&format!("no stale context keys (>{days} days since last access)"));
+            } else {
+                out.push_str(&format!("stale context keys (>{days} days since last access):\n"));
+                for k in stale {
+                    let when = crate::tools::context::meta(&k)
+                        .map(|m| m.accessed_at.chars().take(16).collect::<String>())
+                        .unwrap_or_default();
+                    out.push_str(&format!("  - {k} (last {when})\n"));
+                }
             }
         }
         "search" => {
@@ -246,8 +265,12 @@ fn memory(args: &str) -> String {
             if hits.is_empty() {
                 out.push_str("  (none)\n");
             } else {
-                for (k, v) in hits {
-                    out.push_str(&format!("  - {k}: {v}\n"));
+                for (k, v, s) in hits {
+                    if s.is_empty() {
+                        out.push_str(&format!("  - {k}: {v}\n"));
+                    } else {
+                        out.push_str(&format!("  - {k}: {v} (source: {s})\n"));
+                    }
                 }
             }
             out.push_str("## event matches\n");
@@ -263,7 +286,7 @@ fn memory(args: &str) -> String {
                 out.push_str("  (none)\n");
             }
         }
-        other => out.push_str(&format!("unknown /memory subcommand '{other}'. Try /memory, /memory drop <key>, /memory compact, /memory search <text>")),
+        other => out.push_str(&format!("unknown /memory subcommand '{other}'. Try /memory, /memory drop <key>, /memory compact, /memory stale [<days>], /memory search <text>")),
     }
 
     out

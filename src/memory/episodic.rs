@@ -141,12 +141,66 @@ pub fn compact() -> anyhow::Result<Vec<Event>> {
         .open(&notes)?;
     writeln!(notes_file, "{out}")?;
 
+    let _ = dispatch_compact(&archive);
+
     Ok(chunk)
+}
+
+/// Background memory-agent job: boil an archived chunk into prose on NOTES.md.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Job {
+    /// Absolute project dir; `.zakhar` lives inside it.
+    pub root: PathBuf,
+    /// Absolute path to the archived chunk.
+    pub archive: PathBuf,
+    pub created: String,
+}
+
+/// Hand the summarisation to the background daemon. Writes a job to the shared
+/// ~/.zakhar/jobs mailbox and makes sure a daemon is running; the daemon
+/// distills the chunk into NOTES.md in its own process, so the caller never
+/// waits and the main agent never sees it.
+pub fn dispatch_compact(archive: &Path) -> anyhow::Result<()> {
+    if cfg!(test) || std::env::var("ZAKHAR_NO_COMPACT").is_ok() {
+        return Ok(());
+    }
+    let root = std::env::current_dir()?;
+    let archive = if archive.is_absolute() {
+        archive.to_path_buf()
+    } else {
+        root.join(archive)
+    };
+    let job = Job {
+        root,
+        archive,
+        created: Utc::now().to_rfc3339(),
+    };
+    let dir = crate::paths::jobs();
+    std::fs::create_dir_all(&dir)?;
+    let name = format!("compact-{}.json", Utc::now().format("%Y%m%d-%H%M%S-%6f"));
+    std::fs::write(dir.join(name), serde_json::to_string(&job)?)?;
+    crate::cli::daemon::ensure_daemon();
+    Ok(())
+}
+
+/// Read archived events back from an archive file (used by the background
+/// daemon, which does not share this process's working directory).
+pub fn read_archive(archive: &Path) -> Vec<Event> {
+    std::fs::read_to_string(archive)
+        .ok()
+        .map(|t| {
+            t.lines()
+                .filter_map(|l| serde_json::from_str(l).ok())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Async LLM summarisation: call the model to distill a chunk of archived
 /// events into a concise prose summary, then append it to NOTES.md.
+/// `root` is the project dir the `.zakhar` home lives in.
 pub async fn summarize_compaction(
+    root: &Path,
     provider: &dyn crate::provider::Provider,
     model: &str,
     events: &[Event],
@@ -155,7 +209,6 @@ pub async fn summarize_compaction(
         return Ok("no events to summarise".to_string());
     }
 
-    // Build a compact representation of the events for the LLM
     let event_lines: Vec<String> = events
         .iter()
         .map(|e| format!("[{}] {}: {}", e.ts, e.kind, e.text))
@@ -186,7 +239,6 @@ pub async fn summarize_compaction(
 
     let mut stream = provider.chat_stream(request).await?;
 
-    // Collect the full response (non-streaming, but still arrives as deltas)
     let mut summary = String::new();
     while let Some(event) = futures::StreamExt::next(&mut stream).await {
         match event? {
@@ -202,12 +254,7 @@ pub async fn summarize_compaction(
 
     let summary = summary.trim().to_string();
 
-    // Append the LLM summary to NOTES.md
-    let dir = parent_dir(&path());
-    let notes = dir
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join("NOTES.md");
+    let notes = root.join(".zakhar").join("NOTES.md");
     let stamp = Utc::now().format("%Y-%m-%d %H:%M");
     let entry = format!("\n## Summary @ {stamp} ({} events)\n{}\n", events.len(), summary);
     let mut notes_file = std::fs::OpenOptions::new()

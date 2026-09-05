@@ -55,11 +55,6 @@ pub async fn chat(
         runner.push(crate::types::Message::system(format!("{label}:\n{text}")));
     }
 
-    runner.push(crate::types::Message::system(format!(
-        "Current UTC time: {}. Use this when scheduling reminders (remind tool) or interpreting relative times.",
-        chrono::Utc::now().to_rfc3339()
-    )));
-
     {
         let persisted = crate::tools::load_persisted_todos();
         if !persisted.is_empty() {
@@ -242,32 +237,10 @@ pub async fn chat(
                 .collect();
 
             if tool_calls.is_empty() || invoke.is_none() {
-                if !full.trim().is_empty() {
-                    match crate::memory::episodic::append("chat", &full) {
-                        Ok(events) if !events.is_empty() => {
-                            // Compaction triggered — fire-and-forget LLM summary
-                            let pid = provider_id.clone();
-                            let mdl = model.clone();
-                            let cfg2 = cfg.clone();
-                            tokio::spawn(async move {
-                                let reg = crate::registry::build(&cfg2);
-                                if let Some(prov) = reg.get(&pid) {
-                                    match crate::memory::episodic::summarize_compaction(prov, &mdl, &events).await {
-                                        Ok(summary) => {
-                                            println!("[memory] compaction summary: {summary}");
-                                        }
-                                        Err(e) => {
-                                            println!("[memory] compaction summary failed: {e}");
-                                        }
-                                    }
-                                }
-                            });
-                        }
-                        Err(e) => {
-                            println!("[memory] failed to log event: {e}");
-                        }
-                        _ => {}
-                    }
+                if !full.trim().is_empty()
+                    && let Err(e) = crate::memory::episodic::append("chat", &full)
+                {
+                    println!("[memory] failed to log event: {e}");
                 }
                 runner.push(crate::types::Message::assistant(full.clone(), None));
                 session

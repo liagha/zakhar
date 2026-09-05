@@ -45,10 +45,6 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
             "{label}:\n{text}"
         )));
     }
-    runner.push(crate::types::Message::system(format!(
-        "Current UTC time: {}. Use this when scheduling reminders (remind tool) or interpreting relative times.",
-        chrono::Utc::now().to_rfc3339()
-    )));
     let ctx = crate::tools::context_index();
     if ctx != "no saved context" {
         runner.push(crate::types::Message::system(format!(
@@ -72,24 +68,8 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
     let mut session = Session::new();
     let text = run_tool_loop(&mut ui, &mut runner, &cfg, &inv, p, &mut session).await?;
 
-    match crate::memory::episodic::append("phrase", &text) {
-        Ok(events) if !events.is_empty() => {
-            let pid = provider_id.clone();
-            let mdl = model.clone();
-            let cfg2 = cfg.clone();
-            tokio::spawn(async move {
-                let reg = crate::registry::build(&cfg2);
-                if let Some(prov) = reg.get(&pid) {
-                    if let Err(e) = crate::memory::episodic::summarize_compaction(prov, &mdl, &events).await {
-                        println!("[memory] compaction summary failed: {e}");
-                    }
-                }
-            });
-        }
-        Err(e) => {
-            println!("[memory] failed to log event: {e}");
-        }
-        _ => {}
+    if let Err(e) = crate::memory::episodic::append("phrase", &text) {
+        println!("[memory] failed to log event: {e}");
     }
 
     if let Some(seed) = crate::invoke::chat_message() {

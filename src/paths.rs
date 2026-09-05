@@ -26,6 +26,10 @@ pub fn reminders_path() -> PathBuf {
     home().join("reminders.json")
 }
 
+pub fn jobs() -> PathBuf {
+    home().join("jobs")
+}
+
 pub fn ensure_home() -> anyhow::Result<()> {
     std::fs::create_dir_all(home())?;
     Ok(())

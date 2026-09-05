@@ -1,5 +1,8 @@
+use std::io::Write;
+use std::path::Path;
 use std::process::Command;
 
+use crate::memory::episodic;
 use crate::reminder;
 
 pub fn notify(message: &str) {
@@ -48,6 +51,7 @@ pub fn ensure_daemon() {
 pub async fn run() -> anyhow::Result<()> {
     println!("zakhar daemon started (pid {})", std::process::id());
     loop {
+        drain_jobs();
         for r in reminder::due_and_due() {
             let msg = format!("⏰ {}", r.message);
             notify(&msg);
@@ -63,6 +67,75 @@ pub async fn run() -> anyhow::Result<()> {
             }
         }
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+    }
+}
+
+fn drain_jobs() {
+    let dir = crate::paths::jobs();
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().map(|x| x == "json").unwrap_or(false)
+            && let Ok(text) = std::fs::read_to_string(&path)
+            && let Ok(job) = serde_json::from_str::<episodic::Job>(&text)
+        {
+            let _ = std::fs::remove_file(&path);
+            tokio::spawn(async move {
+                summarize(job).await;
+            });
+        }
+    }
+}
+
+struct Summary {
+    events: usize,
+    chars: usize,
+}
+
+async fn summarize(job: episodic::Job) {
+    let line = match run_summary(&job).await {
+        Ok(s) => format!(
+            "daemon: summarized {} events from {} ({} chars)",
+            s.events,
+            job.archive.display(),
+            s.chars
+        ),
+        Err(e) => format!("daemon: summary failed for {}: {e}", job.archive.display()),
+    };
+    log(&job.root.join(".zakhar/memory/compaction.log"), &line);
+}
+
+async fn run_summary(job: &episodic::Job) -> anyhow::Result<Summary> {
+    let events = episodic::read_archive(&job.archive);
+    if events.is_empty() {
+        anyhow::bail!("archive is empty");
+    }
+    let cfg = crate::config::Config::load()?;
+    let registry = crate::registry::build(&cfg);
+    let pid = crate::registry::default_provider(&cfg);
+    let provider = registry
+        .get(&pid)
+        .ok_or_else(|| anyhow::anyhow!("unknown provider: {pid}"))?;
+    let model = cfg
+        .default_model
+        .clone()
+        .or_else(|| provider.list_models().first().cloned())
+        .unwrap_or_default();
+    let summary = episodic::summarize_compaction(&job.root, provider, &model, &events).await?;
+    Ok(Summary {
+        events: events.len(),
+        chars: summary.len(),
+    })
+}
+
+fn log(path: &Path, line: &str) {
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "{line}");
     }
 }
 

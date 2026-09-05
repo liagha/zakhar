@@ -1,5 +1,6 @@
 mod ask;
 pub(crate) use ask::load_persisted_todos;
+mod compact;
 pub(crate) mod context;
 mod exec;
 pub(crate) use exec::Task;
@@ -9,6 +10,7 @@ mod remind;
 mod search;
 mod session;
 mod system;
+mod time;
 
 use crate::handler::Handler;
 
@@ -25,12 +27,14 @@ pub fn all() -> Vec<Box<dyn Handler>> {
         Box::new(ask::Ask),
         Box::new(ask::Todo),
         Box::new(context::Context),
+        Box::new(compact::Compact),
         Box::new(fetch::Fetch),
         Box::new(search::Search),
         Box::new(remind::Remind),
         Box::new(session::SessionTool),
         Box::new(system::Skill),
         Box::new(system::Control),
+        Box::new(time::Time),
     ]
 }
 
