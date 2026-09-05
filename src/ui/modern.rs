@@ -13,6 +13,7 @@ pub struct Modern {
     mark_printed: bool,
     preview: String,
     preview_at: Option<Instant>,
+    cols: usize,
 }
 
 const PREVIEW_TICK: std::time::Duration = std::time::Duration::from_millis(30);
@@ -27,6 +28,7 @@ impl Modern {
             mark_printed: false,
             preview: String::new(),
             preview_at: None,
+            cols: term_width(),
         }
     }
 
@@ -184,7 +186,7 @@ impl Modern {
         if !due && !grew {
             return;
         }
-        let rendered = markdown::preview(&pending);
+        let rendered = markdown::preview(&trunc_to_cols(&pending, self.cols - 1));
         self.clear_preview();
         print!("{}", rendered.dimmed());
         self.preview = pending;
@@ -225,4 +227,38 @@ impl Modern {
 
 fn flush() {
     std::io::stdout().flush().ok();
+}
+
+fn term_width() -> usize {
+    let mut ws = libc::winsize {
+        ws_row: 0,
+        ws_col: 0,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    let ok = unsafe { libc::ioctl(1, libc::TIOCGWINSZ, &mut ws) };
+    if ok == 0 && ws.ws_col > 0 {
+        ws.ws_col as usize
+    } else {
+        80
+    }
+}
+
+fn trunc_to_cols(s: &str, cols: usize) -> String {
+    let mut used = 0usize;
+    let mut out = String::new();
+    let mut truncated = false;
+    for c in s.chars() {
+        let w = if c.is_ascii() { 1 } else { 2 };
+        if used + w > cols {
+            truncated = true;
+            break;
+        }
+        out.push(c);
+        used += w;
+    }
+    if truncated && used < cols {
+        out.push('…');
+    }
+    out
 }
