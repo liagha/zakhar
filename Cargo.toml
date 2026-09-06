@@ -1,6 +1,6 @@
 [package]
 name = "zakhar"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Multi-agent CLI tool for working with AI coding models"
 license = "MIT"
