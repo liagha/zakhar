@@ -21,6 +21,21 @@ pub struct Config {
     pub default_model: Option<String>,
     #[serde(default)]
     pub ui: UiColors,
+    #[serde(default)]
+    pub mcp: Mcp,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Mcp {
+    #[serde(default)]
+    pub servers: HashMap<String, McpServer>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServer {
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

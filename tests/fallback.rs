@@ -62,6 +62,7 @@ fn cfg() -> Config {
         default_provider: Some("zai".to_string()),
         default_model: Some("glm-4.7-flash".to_string()),
         ui: Default::default(),
+        mcp: Default::default(),
     }
 }
 

@@ -71,11 +71,18 @@ pub async fn chat(
     let provider_box = crate::fallback::build(&registry, &routes, decide)?;
     let p: &dyn crate::provider::Provider = provider_box.as_ref();
 
-    let invoke = if invoke_flag {
+    let mut invoke = if invoke_flag {
         Some(Invoke::new())
     } else {
         None
     };
+
+    if let Some(inv) = &mut invoke {
+        let mounted = inv.mount_mcp(&cfg);
+        if !mounted.is_empty() {
+            ui.note(&format!("mcp: {}", mounted.join(", ")));
+        }
+    }
 
     let mut session = Session::new();
     let mut runner = Runner::new(p, model.clone(), agent_cfg);

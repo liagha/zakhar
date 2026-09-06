@@ -46,7 +46,11 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
     let p: &dyn crate::provider::Provider = provider_box.as_ref();
     crate::invoke::seed_models(p.list_models());
 
-    let inv = Invoke::new();
+    let mut inv = Invoke::new();
+    let mounted = inv.mount_mcp(&cfg);
+    if !mounted.is_empty() {
+        ui.note(&format!("mcp: {}", mounted.join(", ")));
+    }
     let mut runner = Runner::new(p, model.clone(), None);
 
     runner.push(crate::types::Message::system(

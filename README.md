@@ -117,6 +117,42 @@ user_agent = "opencode/1.18.25"
 models = ["big-pickle", "deepseek-v4-flash-free", "mimo-v2.5-free"]
 ```
 
+## MCP
+
+zakhar speaks Model Context Protocol in both directions over stdio
+(newline-delimited JSON-RPC):
+
+- **Client** — every server in `[mcp.servers]` is launched at startup (chat,
+  phrase mode, delegations, mobile) and its tools are mounted into the agent as
+  `server__tool` functions:
+
+  ```toml
+  [mcp.servers.filesystem]
+  command = "npx"
+  args = ["-y", "@modelcontextprotocol/server-filesystem", "/home/me/projects"]
+
+  [mcp.servers.fetch]
+  command = "uvx"
+  args = ["mcp-server-fetch"]
+  ```
+
+  A server that fails to start is skipped (a note is printed) and the rest of
+  the session continues. Mounted tools run through the normal approval flow —
+  they are treated like mutating tools until the session grants blanket
+  permission.
+
+- **Server** — `zakhar mcp` exposes zakhar's read-only and knowledge tools
+  (`read`, `glob`, `grep`, `search`, `fetch`, `calc`, `clipboard`, `env`,
+  `json`, `ps`, `regex`, `remember`, `context`, `session`, `time`) to any MCP
+  client:
+
+  ```sh
+  zakhar mcp
+  ```
+
+  Interactive and stdout-writing tools (`bash`, `write`, `edit`, `ask`,
+  `delegate`, and so on) are deliberately not exposed.
+
 ## Colors
 
 UI colors are configured per-role in the `[ui]` section. Each key accepts a

@@ -160,7 +160,9 @@ fn run_turn(session: Arc<Session>, provider: Box<dyn Provider>, messages_json: S
         };
         let model = provider.list_models().first().cloned().unwrap_or_default();
 
-        let inv = crate::invoke::Invoke::new();
+        let mut inv = crate::invoke::Invoke::new();
+        let cfg = crate::config::Config::load().unwrap_or_default();
+        let _ = inv.mount_mcp(&cfg);
         let tools = inv.definitions();
 
         let mut runner = crate::agent::Runner::new(provider.as_ref(), model, None);

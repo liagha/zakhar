@@ -45,6 +45,8 @@ enum Command {
         shell: Shell,
     },
     Daemon,
+    /// Run as an MCP server over stdio, exposing read-only and knowledge tools.
+    Mcp,
     /// Show every path zakhar writes to (its single ~/.zakhar home).
     Paths,
     /// Permanently delete everything zakhar stores in ~/.zakhar.
@@ -64,7 +66,10 @@ async fn main() -> anyhow::Result<()> {
 
     if !matches!(
         cli.command,
-        Some(Command::Paths) | Some(Command::Clean) | Some(Command::Completion { .. })
+        Some(Command::Paths)
+            | Some(Command::Clean)
+            | Some(Command::Completion { .. })
+            | Some(Command::Mcp)
     ) {
         zakhar::migrate::run();
     }
@@ -91,6 +96,7 @@ async fn main() -> anyhow::Result<()> {
             clap_complete::generate(shell, &mut cmd, "zakhar", &mut std::io::stdout());
         }
         (Some(Command::Daemon), _) => daemon::run().await?,
+        (Some(Command::Mcp), _) => zakhar::mcp::server::run()?,
         (Some(Command::Paths), _) => clean::paths_cmd(),
         (Some(Command::Clean), _) => clean::clean_cmd()?,
         (None, words) if !words.is_empty() => {

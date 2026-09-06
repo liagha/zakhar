@@ -20,6 +20,7 @@ pub mod hooks;
 pub mod invoke;
 pub mod ledger;
 pub mod levels;
+pub mod mcp;
 pub mod memory;
 pub mod migrate;
 pub mod mobile;

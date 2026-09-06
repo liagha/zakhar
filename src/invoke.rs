@@ -4,6 +4,7 @@ use std::sync::{Mutex, OnceLock};
 
 use serde_json::Value;
 
+use crate::config::Config;
 use crate::handler::Handler;
 use crate::types::Tool;
 
@@ -83,6 +84,36 @@ impl Invoke {
 
     pub fn definitions(&self) -> Vec<Tool> {
         self.tools.values().map(|t| t.spec()).collect()
+    }
+
+    pub fn mount(&mut self, name: String, handler: Box<dyn Handler>) {
+        self.tools.insert(name, handler);
+    }
+
+    pub fn mount_mcp(&mut self, cfg: &Config) -> Vec<String> {
+        let mut labels = Vec::new();
+        for (server_key, server) in &cfg.mcp.servers {
+            match crate::mcp::client::connect(server_key, server) {
+                Ok(client) => {
+                    let prefix = crate::mcp::sanitize(server_key);
+                    let mut added = 0usize;
+                    for tool in client.tools().to_vec() {
+                        let label = format!("{prefix}__{}", crate::mcp::sanitize(&tool.name));
+                        let mut tool = tool;
+                        tool.description = format!(
+                            "MCP tool `{}` on server `{}`.\n{}",
+                            tool.name, server_key, tool.description
+                        );
+                        let handler = crate::mcp::client::make_handler(label.clone(), client.clone(), tool);
+                        self.tools.insert(label, Box::new(handler));
+                        added += 1;
+                    }
+                    labels.push(format!("{server_key} ({added} tool(s))"));
+                }
+                Err(e) => eprintln!("[mcp] {server_key}: {e}"),
+            }
+        }
+        labels
     }
 
     pub fn filtered_definitions(&self, allowed: &[String]) -> Vec<Tool> {
