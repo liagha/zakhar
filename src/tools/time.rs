@@ -11,8 +11,10 @@ impl Handler for Time {
             tool_type: "function".to_string(),
             function: crate::types::Function {
                 name: "time".to_string(),
-                description: "Get the current UTC time. Use it to compute due timestamps for \
-                              reminders or to interpret relative times like '11AM' or 'in 30 min'."
+                description: "Get the current time in the user's local timezone plus the UTC \
+                              time. Storing the user's phrase at the right local moment \
+                              requires the local offset: compute the due timestamp from \
+                              'local' and keep the offset, e.g. '11AM' => due_at '07:30:00+03:30'."
                     .to_string(),
                 parameters: json!({
                     "type": "object",
@@ -24,7 +26,15 @@ impl Handler for Time {
     }
 
     fn run(&self, _args: &Value) -> anyhow::Result<String> {
-        Ok(chrono::Utc::now().to_rfc3339())
+        let utc = chrono::Utc::now();
+        let local = chrono::Local::now();
+        Ok(format!(
+            "local: {}\nutc: {}\noffset: {}\nzone: {}",
+            local.to_rfc3339(),
+            utc.to_rfc3339(),
+            local.format("%:z"),
+            local.format("%Z")
+        ))
     }
 }
 
@@ -32,10 +42,43 @@ impl Handler for Time {
 mod tests {
     use super::*;
 
+    fn field<'a>(out: &'a str, name: &str) -> &'a str {
+        out.lines()
+            .find(|l| l.starts_with(&format!("{name}:")))
+            .and_then(|l| l.split_once(':').map(|(_, rest)| rest.trim()))
+            .unwrap_or("")
+    }
+
     #[test]
-    fn run_returns_rfc3339() {
+    fn run_reports_local_offset_and_utc() {
         let out = Time.run(&json!({})).unwrap();
-        let parsed = chrono::DateTime::parse_from_rfc3339(&out);
-        assert!(parsed.is_ok(), "expected RFC3339, got {out}");
+        for name in ["local", "utc"] {
+            let ts = field(&out, name);
+            assert!(
+                chrono::DateTime::parse_from_rfc3339(ts).is_ok(),
+                "{name} timestamp unparseable: {ts:?}"
+            );
+        }
+        let offset = field(&out, "offset");
+        assert!(
+            offset.starts_with('+') || offset.starts_with('-'),
+            "bad offset {offset:?}"
+        );
+        assert!(!field(&out, "zone").is_empty());
+    }
+
+    #[test]
+    fn local_matches_utc_line() {
+        let out = Time.run(&json!({})).unwrap();
+        let local = chrono::DateTime::parse_from_rfc3339(field(&out, "local")).unwrap();
+        let utc = chrono::DateTime::parse_from_rfc3339(field(&out, "utc")).unwrap();
+        let delta = local.with_timezone(&chrono::Utc)
+            .signed_duration_since(utc)
+            .num_seconds()
+            .abs();
+        assert!(
+            delta <= 2,
+            "local {local} does not map onto utc {utc} (off by {delta}s)"
+        );
     }
 }
