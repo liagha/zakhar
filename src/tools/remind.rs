@@ -8,27 +8,22 @@ pub struct Remind;
 
 impl Handler for Remind {
     fn spec(&self) -> Tool {
-        Tool {
-            tool_type: "function".to_string(),
-            function: crate::types::Function {
-                name: "remind".to_string(),
-                description: "Schedule a reminder. First call the time tool to learn the \
-                              current local time and its UTC offset, then compute the RFC3339 \
-                              due timestamp for the user's LOCAL moment keeping the local \
-                              offset (e.g. '5PM' local = 'due_at: 17:00:00+03:30'). Stores it \
-                              so a background daemon fires it automatically."
-                    .to_string(),
-                parameters: json!({
-                    "type": "object",
-                    "properties": {
-                        "message": { "type": "string", "description": "What to remind about" },
-                        "due_at": { "type": "string", "description": "RFC3339 due timestamp for the user's local time, including the local offset as reported by the time tool" },
-                        "recurring": { "type": "string", "description": "Optional interval (e.g. 'daily', 'weekly', 'every hour') or null for one-shot" }
-                    },
-                    "required": ["message", "due_at"]
-                }),
-            },
-        }
+        Tool::function(
+            "remind",
+            "Schedule a reminder. First call the time tool to learn the current local time and \
+             its UTC offset, then compute the RFC3339 due timestamp for the user's LOCAL moment \
+             keeping the local offset (e.g. '5PM' local = 'due_at: 17:00:00+03:30'). Stores it so \
+             a background daemon fires it automatically.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "message": { "type": "string", "description": "What to remind about" },
+                    "due_at": { "type": "string", "description": "RFC3339 due timestamp for the user's local time, including the local offset as reported by the time tool" },
+                    "recurring": { "type": "string", "description": "Optional interval (e.g. 'daily', 'weekly', 'every hour') or null for one-shot" }
+                },
+                "required": ["message", "due_at"]
+            }),
+        )
     }
 
     fn run(&self, args: &Value) -> anyhow::Result<String> {

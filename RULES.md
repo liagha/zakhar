@@ -1,25 +1,33 @@
-here are my coding rules:
-No comments — absolutely no inline, block. Doc strings are ok if the code already has them or is at its final stage of developement. Code must be entirely self-explanatory.
-Naming
+# Coding Rules
 
-    Prefer single‑word names.
-    If unavoidable, use at most two words separated by an underscore (snake_case).
-    Names must be clear, concise, non-acronym/shortened, and visually clean.
-    Avoid redundant context — if a variable or function is unique within its scope, use left instead of left_type.
-    If something can be named a smaller word, in the context, it should be named the shortest possible one.
+## Comments
+- No comments — neither inline nor block.
+- Docstrings are allowed only where the code already has them, or where the code is at its final stage of development.
+- Code must be entirely self-explanatory.
 
-Style inheritance
+## Naming
+- Prefer single-word names.
+- If a two-word name is unavoidable, join it with an underscore (snake_case).
+- Names must be clear, concise, free of acronyms and shortenings, and visually clean.
+- Drop redundant context. A name that is unique within its scope should be the shortest possible (`left`, not `left_type`).
 
-    If code is provided, mirror its existing style, structure, and naming scheme.
-    If the provided code breaks these rules, fix it while keeping logical consistency with its design.
-    Maintain uniform style across new and old code.
-    Nothing in the code should have mutual logic, everything should be doing one thing, and anything with duplicate, or mututal intersecting parts should be put into a separate part used by them both.
-    this would also allow for better and cleaner names.
+## Style inheritance
+- When given code, mirror its existing style, structure, and naming scheme.
+- If the given code breaks these rules, fix it while keeping logical consistency with its design.
+- Keep collected style uniform across new and old code.
+- Every piece of code should do one thing. Anything duplicated, or with mutually intersecting parts, belongs in a separate shared piece that all users call — this also yields better, cleaner names.
 
-Structure over commentary — The code should use language features, layout, and naming to convey meaning. It should never need external explanation.
-Quality tone — The result must read as clean, minimal, and deliberate — clarity through structure, not words.
-Make sure to respond to me in code snippets if your response contains code.
+## Structure over commentary
+- Convey meaning through language features, layout, and naming. External explanation should never be needed.
 
-dont write the file if you dont change it, and if you do, rewrite the file completely with a head for me to know what the file is, and in a code snippet for cleaner response.
-I want it to be clean and modular, so that when read file by file, each file can be changable and tweakable without needing the full project.
-if theres any part, code, module or anything that you want me to provide or you have forgot, tell me to provide them
+## Quality tone
+- Output must read as clean, minimal, and deliberate — clarity through structure, not words.
+
+## Presentation
+- If a response contains code, show it in code snippets.
+- Never write a file unless it changes.
+- When a file does change, rewrite it completely. Open with a head telling what the file is, and present it as one code snippet.
+
+## Modularity
+- Keep files clean and modular, so each can be read, changed, and tweaked without needing the full project.
+- Tell me about any part, code, or module you want me to provide, or that I forgot to include.

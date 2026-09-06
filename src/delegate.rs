@@ -9,7 +9,7 @@ use crate::hooks;
 use crate::invoke::Invoke;
 use crate::provider::Provider;
 use crate::slash;
-use crate::types::{Function, Message, Tool, ToolCall};
+use crate::types::{Message, Tool, ToolCall};
 
 const MAX_DEPTH: usize = 3;
 const MAX_TURNS: usize = 8;
@@ -90,21 +90,18 @@ pub fn tool_def(cfg: &Config) -> Tool {
             "description": "Task description for the sub-agent. Be specific and self-contained."
         }),
     );
-    Tool {
-        tool_type: "function".to_string(),
-        function: Function {
-            name: "delegate".to_string(),
-            description: format!(
-                "Delegate a sub-task to a specialist agent. Available agents: {}. Use when a task is better handled by a specialist. The sub-agent will run autonomously with its own tools and return a result. Multiple delegates in one turn run in parallel.",
-                agent_list
-            ),
-            parameters: json!({
-                "type": "object",
-                "properties": props,
-                "required": ["agent", "task"]
-            }),
-        },
-    }
+    Tool::function(
+        "delegate",
+        format!(
+            "Delegate a sub-task to a specialist agent. Available agents: {}. Use when a task is better handled by a specialist. The sub-agent will run autonomously with its own tools and return a result. Multiple delegates in one turn run in parallel.",
+            agent_list
+        ),
+        json!({
+            "type": "object",
+            "properties": props,
+            "required": ["agent", "task"]
+        }),
+    )
 }
 
 pub fn handoff_tool_def(cfg: &Config) -> Tool {
@@ -134,21 +131,18 @@ pub fn handoff_tool_def(cfg: &Config) -> Tool {
             "description": "Task/context to hand off. The receiving agent takes over the conversation and its final answer is returned as the handoff result."
         }),
     );
-    Tool {
-        tool_type: "function".to_string(),
-        function: Function {
-            name: "handoff".to_string(),
-            description: format!(
-                "Hand off the conversation to another agent (pipeline). Available: {}. The target agent runs to completion and its answer becomes the final result. Use for sequential pipelines e.g. explorer -> coder -> reviewer. Prefer delegate for parallel sub-tasks.",
-                agent_list
-            ),
-            parameters: json!({
-                "type": "object",
-                "properties": props,
-                "required": ["agent", "task"]
-            }),
-        },
-    }
+    Tool::function(
+        "handoff",
+        format!(
+            "Hand off the conversation to another agent (pipeline). Available: {}. The target agent runs to completion and its answer becomes the final result. Use for sequential pipelines e.g. explorer -> coder -> reviewer. Prefer delegate for parallel sub-tasks.",
+            agent_list
+        ),
+        json!({
+            "type": "object",
+            "properties": props,
+            "required": ["agent", "task"]
+        }),
+    )
 }
 
 pub async fn run(
@@ -393,13 +387,13 @@ pub async fn run(
                 let args = tc.arguments.get("args").and_then(|v| v.as_str()).unwrap_or("");
                 println!("{prefix} → slash {cmd} {args} …");
                 std::io::Write::flush(&mut std::io::stdout()).ok();
-                // slash in delegate: use a dummy session that mirrors runner
-                let mut dummy_session = crate::session::Session::new();
-                dummy_session.messages = runner.messages().clone();
-                let out = slash::handle_ai(cmd, args, &mut dummy_session, &mut runner);
-                // sync back if slash modified runner (e.g., /clear)
-                // dummy_session's messages already synced via handle_ai
-                println!("{prefix} ← slash {cmd} done: {}", out.lines().next().unwrap_or("").chars().take(60).collect::<String>());
+                let mut mirror = crate::session::Session::new();
+                mirror.messages = runner.messages().clone();
+                let out = slash::handle_ai(cmd, args, &mut mirror, &mut runner);
+                println!(
+                    "{prefix} ← slash {cmd} done: {}",
+                    out.lines().next().unwrap_or("").chars().take(60).collect::<String>()
+                );
                 std::io::Write::flush(&mut std::io::stdout()).ok();
                 hooks::run_post(&tc.name, &tc.arguments, &out);
                 outputs.insert(tc.id.clone(), out);
@@ -437,8 +431,6 @@ pub async fn run(
             let out = outputs
                 .remove(&tc.id)
                 .unwrap_or_else(|| "error: missing output".to_string());
-            // handoff semantics: if was handoff, its output becomes the pipeline result
-            // we still push as tool result; the outer loop will feed it back, but we log it
             if tc.name == "handoff" {
                 let src = tc.arguments.get("agent").and_then(|v| v.as_str()).unwrap_or("?");
                 println!("{}", format!("{prefix} ↪ handoff from {src} complete").dimmed());

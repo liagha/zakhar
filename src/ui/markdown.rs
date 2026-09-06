@@ -578,7 +578,6 @@ mod tests {
 
     #[test]
     fn inline_never_panics_on_partial() {
-        // a lone opening marker at end of a streamed chunk must not panic
         let out = render("some **partial\n");
         assert!(out.contains("some"));
     }
@@ -588,7 +587,6 @@ mod tests {
         let out = render("a [x](u) b\n");
         assert!(out.contains("x"));
         assert!(out.contains("b"));
-        // url is rendered once via formatting, not left as raw trailing text
         assert_eq!(out.matches('x').count(), 1);
     }
 

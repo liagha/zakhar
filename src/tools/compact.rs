@@ -7,18 +7,13 @@ pub struct Compact;
 
 impl Handler for Compact {
     fn spec(&self) -> Tool {
-        Tool {
-            tool_type: "function".to_string(),
-            function: crate::types::Function {
-                name: "compact".to_string(),
-                description: "Compress episodic memory: the oldest events are moved out of the \
-                              active window into NOTES.md, where a background agent distills \
-                              them into prose. Call when the session has accumulated many \
-                              events."
-                    .to_string(),
-                parameters: json!({ "type": "object", "properties": {} }),
-            },
-        }
+        Tool::function(
+            "compact",
+            "Compress episodic memory: the oldest events are moved out of the active window into \
+             NOTES.md, where a background agent distills them into prose. Call when the session \
+             has accumulated many events.",
+            json!({ "type": "object", "properties": {} }),
+        )
     }
 
     fn run(&self, _args: &Value) -> anyhow::Result<String> {

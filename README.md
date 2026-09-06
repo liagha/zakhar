@@ -50,6 +50,8 @@ zakhar models                     # list providers and models
 zakhar paths                      # where everything lives
 ```
 
+The agent has small deterministic helpers at its disposal: `calc` (exact arithmetic — the model never guesses math), `json` (validate/format/query JSON by path), `regex` (match/replace with offsets and capture groups), `clipboard` (read/write system clipboard), `env` (report the machine and which tools like git, docker, or wl-copy are installed), and `ps` (list/inspect system processes). They're read-only and run without prompting. `kill` sends signals to processes and is the opposite — confirmed first, like any mutating tool.
+
 Reminders are an AI tool: the model turns a phrase like *"my pills at 11am"* into a stored reminder, and a background daemon (`notify-send` on Linux, `osascript` on macOS) fires it when due.
 
 ## Terminal
@@ -71,10 +73,10 @@ Slash commands in `zakhar chat`:
 
 ```
 /clear    /compact  /init     /help     /agents   /skills
-/memory   /undo     /audit    /sessions /resume   /kill
+/memory   /undo     /audit    /sessions /resume   /diff     /kill
 ```
 
-`/memory` browses knowledge and recent events, and has subcommands: `/memory drop <key>` forgets an entry, `/memory search <text>` recalls, `/memory stale [days]` lists and prunes decayed items, `/memory compact` archives events, and `/memory mind` triggers a background consolidation.
+`/memory` browses knowledge and recent events, and has subcommands: `/memory drop <key>` forgets an entry, `/memory search <text>` recalls, `/memory stale [days]` lists and prunes decayed items, `/memory compact` archives events, and `/memory mind` triggers a background consolidation. `/resume` (with no arguments it re-opens the newest session) and `/sessions` pick up past conversations; `/diff <id1> <id2>` compares two sessions — the asks, tools used, and final answers on each side.
 
 ## Config
 

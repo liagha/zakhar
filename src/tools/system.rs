@@ -3,23 +3,12 @@ use std::path::Path;
 use serde_json::{json, Value};
 
 use crate::handler::Handler;
-use crate::types::{Function, Tool};
-
-fn def(name: &str, description: &str, parameters: Value) -> Tool {
-    Tool {
-        tool_type: "function".to_string(),
-        function: Function {
-            name: name.to_string(),
-            description: description.to_string(),
-            parameters,
-        },
-    }
-}
+use crate::types::Tool;
 
 pub struct Skill;
 impl Handler for Skill {
     fn spec(&self) -> Tool {
-        def("skill", "Load a skill's instructions. Call when a task matches a skill; with no name, lists available skills.", json!({
+        Tool::function("skill", "Load a skill's instructions. Call when a task matches a skill; with no name, lists available skills.", json!({
             "type": "object",
             "properties": { "name": { "type": "string", "description": "Skill name" } },
             "required": []
@@ -84,7 +73,7 @@ impl Handler for Skill {
 pub struct Control;
 impl Handler for Control {
     fn spec(&self) -> Tool {
-        def("control", "Control zakhar itself. action='allow' stops asking before mutating tools (use when the user says 'you have my permission'); action='models' lists available models; action='chat' opens the interactive chat with an optional message.", json!({
+        Tool::function("control", "Control zakhar itself. action='allow' stops asking before mutating tools (use when the user says 'you have my permission'); action='models' lists available models; action='chat' opens the interactive chat with an optional message.", json!({
             "type": "object",
             "properties": {
                 "action": { "type": "string", "enum": ["allow", "models", "chat"], "description": "What to control" },

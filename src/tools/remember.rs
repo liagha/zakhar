@@ -3,13 +3,11 @@ use serde_json::{json, Value};
 use crate::handler::Handler;
 use crate::types::Tool;
 
-use super::context::def;
-
 pub struct Remember;
 
 impl Handler for Remember {
     fn spec(&self) -> Tool {
-        def(
+        Tool::function(
             "remember",
             "Semantic memory recall. Given a natural-language query, returns the most relevant \
              items from persistent project memory (facts, decisions, preferences, open loops) \

@@ -3,7 +3,7 @@ use serde_json::json;
 use crate::types::Tool;
 
 pub fn tool_def() -> Tool {
-    let mut available = vec!["/clear", "/compact", "/init", "/help", "/agents", "/skills", "/memory", "/undo", "/audit", "/sessions", "/resume", "/kill"];
+    let mut available = vec!["/clear", "/compact", "/init", "/help", "/agents", "/skills", "/memory", "/undo", "/audit", "/sessions", "/resume", "/diff", "/kill"];
     for dir in [".opencode/commands", ".zakhar/commands", "commands"] {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for e in entries.flatten() {
@@ -15,15 +15,13 @@ pub fn tool_def() -> Tool {
             }
         }
     }
-    crate::types::Tool {
-        tool_type: "function".to_string(),
-        function: crate::types::Function {
-            name: "slash".to_string(),
-            description: format!(
-                "Invoke a slash command as the AI. Available: {}. Use for /clear, /compact, /init, etc. This is the AI side of slash commands; user can also type /cmd directly.",
-                available.join(", ")
-            ),
-            parameters: json!({
+    Tool::function(
+        "slash",
+        format!(
+            "Invoke a slash command as the AI. Available: {}. Use for /clear, /compact, /init, etc. This is the AI side of slash commands; user can also type /cmd directly.",
+            available.join(", ")
+        ),
+        json!({
                 "type": "object",
                 "properties": {
                     "command": { "type": "string", "description": "Slash command including leading slash, e.g. /clear" },
@@ -31,8 +29,7 @@ pub fn tool_def() -> Tool {
                 },
                 "required": ["command"]
             }),
-        },
-    }
+        )
 }
 
 pub fn handle_user(input: &str, session: &mut crate::session::Session, runner: &mut crate::agent::Runner<'_>) -> Option<String> {
@@ -118,7 +115,8 @@ fn dispatch(cmd: &str, args: &str, session: &mut crate::session::Session, runner
             out.push_str("  /undo [n] - revert the last n mutable tool operations\n");
             out.push_str("  /audit [n] - show the agent ledger of tool operations\n");
             out.push_str("  /sessions - list saved sessions\n");
-            out.push_str("  /resume <id> - resume a previous session\n");
+            out.push_str("  /resume [<id>] - resume a previous session (default: newest)\n");
+            out.push_str("  /diff <id1> <id2> - compare two sessions (asks, tools, answers)\n");
             out.push_str("  /kill - kill all background tasks\n");
             out.push_str("  /kill <id> [...] - kill specific task(s)\n");
             for dir in [".opencode/commands", ".zakhar/commands"] {
@@ -173,17 +171,30 @@ fn dispatch(cmd: &str, args: &str, session: &mut crate::session::Session, runner
         "/sessions" => crate::session::list_formatted(),
         "/resume" => {
             if args.is_empty() {
-                return "usage: /resume <id-prefix>".to_string();
+                return match crate::session::last() {
+                    Some(id) => {
+                        crate::invoke::resume_session(id.clone());
+                        format!("resuming newest session {}", &id[..8])
+                    }
+                    None => "no saved sessions to resume".to_string(),
+                };
             }
-            let sessions = crate::session::list();
-            let matched = sessions.iter().find(|s| s.id.starts_with(args));
-            match matched {
-                Some(s) => {
-                    crate::invoke::resume_session(s.id.clone());
-                    format!("resuming session {} (created {}, {} messages)", &s.id[..8], s.created_at, s.message_count)
+            match crate::session::find(args) {
+                Some(id) => {
+                    crate::invoke::resume_session(id.clone());
+                    format!("resuming session {}", &id[..8])
                 }
                 None => format!("no session matches '{args}'"),
             }
+        }
+        "/diff" => {
+            let mut parts = args.split_whitespace();
+            let a = parts.next().unwrap_or("").trim();
+            let b = parts.next().unwrap_or("").trim();
+            if a.is_empty() || b.is_empty() {
+                return "usage: /diff <id1> <id2>".to_string();
+            }
+            crate::session::diff(a, b).unwrap_or_else(|e| format!("error: {e}"))
         }
         _ => {
             let name = cmd.trim_start_matches('/');

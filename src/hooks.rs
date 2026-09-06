@@ -42,7 +42,6 @@ fn matches(matcher: &str, tool: &str) -> bool {
     if matcher == tool {
         return true;
     }
-    // simple regex via contains or |
     if matcher.contains('|') {
         for part in matcher.split('|') {
             if part.trim() == tool {
@@ -50,7 +49,6 @@ fn matches(matcher: &str, tool: &str) -> bool {
             }
         }
     }
-    // fallback substring
     tool.contains(matcher) || matcher.contains(tool)
 }
 

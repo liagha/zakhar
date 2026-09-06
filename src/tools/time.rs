@@ -7,22 +7,17 @@ pub struct Time;
 
 impl Handler for Time {
     fn spec(&self) -> Tool {
-        Tool {
-            tool_type: "function".to_string(),
-            function: crate::types::Function {
-                name: "time".to_string(),
-                description: "Get the current time in the user's local timezone plus the UTC \
-                              time. Storing the user's phrase at the right local moment \
-                              requires the local offset: compute the due timestamp from \
-                              'local' and keep the offset, e.g. '11AM' => due_at '07:30:00+03:30'."
-                    .to_string(),
-                parameters: json!({
-                    "type": "object",
-                    "properties": {},
-                    "required": []
-                }),
-            },
-        }
+        Tool::function(
+            "time",
+            "Get the current time in the user's local timezone plus the UTC time. Storing the \
+             user's phrase at the right local moment requires the local offset: compute the due \
+             timestamp from 'local' and keep the offset, e.g. '11AM' => due_at '07:30:00+03:30'.",
+            json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        )
     }
 
     fn run(&self, _args: &Value) -> anyhow::Result<String> {

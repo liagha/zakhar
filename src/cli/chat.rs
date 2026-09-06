@@ -1,3 +1,7 @@
+//! Interactive chat loop: prompt the user, stream model responses with
+//! bounded retries, and execute approved tool calls (read-only ones in
+//! parallel), feeding results back until the turn is complete.
+
 use std::collections::HashMap;
 
 use futures::StreamExt;
@@ -12,6 +16,8 @@ use crate::session::Session;
 use crate::slash;
 use crate::types::ToolCall;
 use crate::ui::Ui;
+
+const STREAM_ATTEMPTS: u32 = 3;
 
 #[allow(clippy::too_many_arguments)]
 pub async fn chat(
@@ -179,13 +185,19 @@ pub async fn chat(
         let turn_start = std::time::Instant::now();
         let mut tool_count = 0usize;
 
+        let mut attempts = 0u32;
         loop {
+            if attempts >= STREAM_ATTEMPTS {
+                ui.err(format!("stream failed after {STREAM_ATTEMPTS} attempts, giving up").as_str());
+                return Err(anyhow::anyhow!("stream failed after {STREAM_ATTEMPTS} attempts"));
+            }
+            attempts += 1;
             ui.status("…");
             let mut stream = match runner.stream().await {
                 Ok(s) => s,
                 Err(e) => {
-                    ui.err(format!("failed to start stream: {e}").as_str());
-                    return Err(e);
+                    ui.err(format!("stream start failed ({attempts}/{STREAM_ATTEMPTS}): {e}").as_str());
+                    continue;
                 }
             };
             let mut full = String::new();
@@ -193,13 +205,14 @@ pub async fn chat(
             let mut had_reasoning = false;
             let mut tool_parts: HashMap<usize, ToolCallPartAccum> = HashMap::new();
             let mut events_seen = 0usize;
+            let mut failed: Option<anyhow::Error> = None;
 
             while let Some(event) = stream.next().await {
                 let event = match event {
                     Ok(ev) => ev,
                     Err(e) => {
-                        ui.err(format!("stream error: {e}").as_str());
-                        return Err(e);
+                        failed = Some(e);
+                        break;
                     }
                 };
                 match event {
@@ -232,6 +245,11 @@ pub async fn chat(
                     _ => {}
                 }
             }
+            if let Some(e) = failed {
+                ui.err(format!("stream interrupted ({attempts}/{STREAM_ATTEMPTS}): {e}").as_str());
+                continue;
+            }
+            attempts = 0;
             if events_seen == 0 {
                 ui.note("stream ended with no content");
             }
@@ -297,6 +315,8 @@ pub async fn chat(
                 Vec::new();
             let mut delegate_ids: Vec<String> = Vec::new();
             let mut delegate_kinds: Vec<String> = Vec::new();
+            let mut open: Vec<ToolCall> = Vec::new();
+            let mut step: Vec<ToolCall> = Vec::new();
 
             for tc in &tool_calls {
                 let approved = if allow_all || auto_approve {
@@ -365,7 +385,20 @@ pub async fn chat(
                             res
                         }));
                     }
-                } else if tc.name == "slash" {
+                } else if crate::invoke::PARALLEL.contains(&tc.name.as_str()) {
+                    open.push(tc.clone());
+                } else {
+                    step.push(tc.clone());
+                }
+            }
+
+            if denied {
+                ui.err("tool calls denied, ending turn");
+                break;
+            }
+
+            for tc in &step {
+                if tc.name == "slash" {
                     let cmd = tc
                         .arguments
                         .get("command")
@@ -412,9 +445,34 @@ pub async fn chat(
                 }
             }
 
-            if denied {
-                ui.err("tool calls denied, ending turn");
-                break;
+            if !open.is_empty() {
+                ui.note(format!("⇉ running {} read-only tool(s) in parallel", open.len()).as_str());
+                let results: Vec<String> = tokio::task::block_in_place(|| {
+                    std::thread::scope(|s| {
+                        let handles: Vec<_> = open
+                            .iter()
+                            .map(|tc| {
+                                let name = tc.name.clone();
+                                let args = tc.arguments.clone();
+                                s.spawn(move || inv.exec(&name, &args))
+                            })
+                            .collect();
+                        handles
+                            .into_iter()
+                            .map(|handle| {
+                                handle.join().unwrap_or_else(|_| {
+                                    "error: parallel tool panicked".to_string()
+                                })
+                            })
+                            .collect()
+                    })
+                });
+                for (tc, res) in open.iter().zip(results) {
+                    let preview: String = res.chars().take(500).collect();
+                    ui.tool_result(&tc.name, &preview, res.len());
+                    hooks::run_post(&tc.name, &tc.arguments, &res);
+                    outputs.insert(tc.id.clone(), res);
+                }
             }
 
             if !delegate_futures.is_empty() {

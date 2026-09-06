@@ -3,11 +3,18 @@ use base64::Engine;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::sync::{Mutex, OnceLock};
 
 const FILE: &str = ".zakhar/ledger.jsonl";
 const BACK_DIR: &str = ".zakhar/ledger/back";
 const CAP: usize = 2000;
 const TRIM: usize = 500;
+
+static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn lock() -> std::sync::MutexGuard<'static, ()> {
+    LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Revert {
@@ -47,6 +54,7 @@ pub fn snapshot(path: &str) -> Option<Revert> {
 }
 
 pub fn record(tool: &str, args: &serde_json::Value, outcome: &str, revert: Option<Revert>) -> anyhow::Result<()> {
+    let _g = lock();
     std::fs::create_dir_all(".zakhar")?;
     let id = crate::memory::knowledge::uid();
     if let Some(r) = &revert {
@@ -85,6 +93,7 @@ pub fn read() -> Vec<Entry> {
 }
 
 pub fn undo(n: usize) -> anyhow::Result<String> {
+    let _g = lock();
     let mut all = read();
     let mut reverted = 0;
     for entry in all.iter_mut().rev().take(n.max(1)) {

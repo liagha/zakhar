@@ -3,23 +3,12 @@ use std::path::Path;
 use serde_json::{json, Value};
 
 use crate::handler::Handler;
-use crate::types::{Function, Tool};
-
-fn def(name: &str, description: &str, parameters: Value) -> Tool {
-    Tool {
-        tool_type: "function".to_string(),
-        function: Function {
-            name: name.to_string(),
-            description: description.to_string(),
-            parameters,
-        },
-    }
-}
+use crate::types::Tool;
 
 pub struct Read;
 impl Handler for Read {
     fn spec(&self) -> Tool {
-        def("read", "Read the contents of a file.", json!({
+        Tool::function("read", "Read the contents of a file.", json!({
             "type": "object",
             "properties": { "path": { "type": "string", "description": "File path to read" } },
             "required": ["path"]
@@ -34,7 +23,7 @@ impl Handler for Read {
 pub struct Write;
 impl Handler for Write {
     fn spec(&self) -> Tool {
-        def("write", "Write content to a file.", json!({
+        Tool::function("write", "Write content to a file.", json!({
             "type": "object",
             "properties": {
                 "path": { "type": "string", "description": "File path to write" },
@@ -57,7 +46,7 @@ impl Handler for Write {
 pub struct Edit;
 impl Handler for Edit {
     fn spec(&self) -> Tool {
-        def("edit", "Perform exact string replacement in a file. old_string must match file content exactly once; use replace_all=true to replace all occurrences. Prefer write for new files.", json!({
+        Tool::function("edit", "Perform exact string replacement in a file. old_string must match file content exactly once; use replace_all=true to replace all occurrences. Prefer write for new files.", json!({
             "type": "object",
             "properties": {
                 "path": { "type": "string", "description": "File path to edit" },
@@ -98,7 +87,7 @@ impl Handler for Edit {
 pub struct Glob;
 impl Handler for Glob {
     fn spec(&self) -> Tool {
-        def("glob", "Find files matching a glob pattern.", json!({
+        Tool::function("glob", "Find files matching a glob pattern.", json!({
             "type": "object",
             "properties": { "pattern": { "type": "string", "description": "Glob pattern (e.g. src/**/*.rs)" } },
             "required": ["pattern"]
@@ -123,7 +112,7 @@ impl Handler for Glob {
 pub struct Grep;
 impl Handler for Grep {
     fn spec(&self) -> Tool {
-        def("grep", "Search file contents with regex. Returns file:line:content matches.", json!({
+        Tool::function("grep", "Search file contents with regex. Returns file:line:content matches.", json!({
             "type": "object",
             "properties": {
                 "pattern": { "type": "string", "description": "Regex pattern to search for" },

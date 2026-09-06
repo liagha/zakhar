@@ -7,18 +7,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use serde_json::{json, Value};
 
 use crate::handler::Handler;
-use crate::types::{Function, Tool};
-
-fn def(name: &str, description: &str, parameters: Value) -> Tool {
-    Tool {
-        tool_type: "function".to_string(),
-        function: Function {
-            name: name.to_string(),
-            description: description.to_string(),
-            parameters,
-        },
-    }
-}
+use crate::types::Tool;
 
 struct Buffer {
     text: String,
@@ -133,7 +122,7 @@ fn watch_store() -> &'static Mutex<HashMap<String, Watcher>> {
 pub struct Bash;
 impl Handler for Bash {
     fn spec(&self) -> Tool {
-        def(
+        Tool::function(
             "bash",
             "Run a shell command. Returns stdout+stderr. Set detach=true to run in background and return a task id immediately. Use task to check output or kill.",
             json!({
@@ -202,7 +191,7 @@ impl Handler for Bash {
 pub struct Task;
 impl Handler for Task {
     fn spec(&self) -> Tool {
-        def(
+        Tool::function(
             "task",
             "Manage background bash tasks. action='list' shows all tasks; action='output' reads a task's output; action='kill' terminates one or more tasks (pass task_id or task_ids array, or kill='all').",
             json!({
@@ -303,7 +292,7 @@ impl Handler for Task {
 pub struct Watch;
 impl Handler for Watch {
     fn spec(&self) -> Tool {
-        def(
+        Tool::function(
             "watch",
             "Run a long-lived command and interact with it like a parent process. action='start' spawns the command; action='read' returns new output; action='send' writes to stdin; action='stop' terminates it. Use for servers, tail -f, or interactive tools you need to monitor across turns. Output is capped.",
             json!({

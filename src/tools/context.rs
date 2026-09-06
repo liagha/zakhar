@@ -4,22 +4,11 @@ use crate::handler::Handler;
 use crate::memory::knowledge;
 use crate::types::Tool;
 
-pub(crate) fn def(name: &str, description: &str, parameters: Value) -> Tool {
-    Tool {
-        tool_type: "function".to_string(),
-        function: crate::types::Function {
-            name: name.to_string(),
-            description: description.to_string(),
-            parameters,
-        },
-    }
-}
-
 pub struct Context;
 
 impl Handler for Context {
     fn spec(&self) -> Tool {
-        def("context", "Persistent memory for this project, shared across sessions and backed \
+        Tool::function("context", "Persistent memory for this project, shared across sessions and backed \
             by consolidated knowledge. action='save' stores a fact under a key (upsert — re-saving \
             the same key updates its value); action='get' returns a key's value by its key or item \
             id; action='list' shows everything remembered with salience and stale markers; \

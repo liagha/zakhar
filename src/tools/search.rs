@@ -2,23 +2,12 @@ use regex::Regex;
 use serde_json::{json, Value};
 
 use crate::handler::Handler;
-use crate::types::{Function, Tool};
-
-fn def(name: &str, description: &str, parameters: Value) -> Tool {
-    Tool {
-        tool_type: "function".to_string(),
-        function: Function {
-            name: name.to_string(),
-            description: description.to_string(),
-            parameters,
-        },
-    }
-}
+use crate::types::Tool;
 
 pub struct Search;
 impl Handler for Search {
     fn spec(&self) -> Tool {
-        def(
+        Tool::function(
             "search",
             "Search the web (via Brave Search). Returns titles, URLs, and snippets for up to 10 results. Use when you need to find information about a topic, look up current events, or discover resources.",
             json!({

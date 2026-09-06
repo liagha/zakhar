@@ -2,57 +2,61 @@ use regex::Regex;
 use serde_json::{json, Value};
 
 use crate::handler::Handler;
-use crate::types::{Function, Tool};
-
-fn def(name: &str, description: &str, parameters: Value) -> Tool {
-    Tool {
-        tool_type: "function".to_string(),
-        function: Function {
-            name: name.to_string(),
-            description: description.to_string(),
-            parameters,
-        },
-    }
-}
+use crate::types::Tool;
 
 /// Strip HTML tags and extract readable text.
 fn html_to_text(html: &str) -> String {
     let mut s = html.to_string();
-
-    // Remove script, style, noscript, svg elements and their content
-    for tag in &["script", "style", "noscript", "svg"] {
-        if let Ok(re) = Regex::new(&format!("(?is)<{tag}[^>]*>.*?</{tag}>")) {
-            s = re.replace_all(&s, " ").to_string();
-        }
-    }
-    // Remove HTML comments
-    if let Ok(re) = Regex::new(r"(?s)<!--.*?-->") {
-        s = re.replace_all(&s, " ").to_string();
-    }
-    // Replace block-level elements with newlines
-    if let Ok(re) = Regex::new(r"(?i)</?(p|div|h[1-6]|br|li|tr|blockquote|pre|section|article|header|footer|nav|main|aside)[^>]*/?>") {
-        s = re.replace_all(&s, "\n").to_string();
-    }
-    // Remove remaining HTML tags
-    if let Ok(re) = Regex::new(r"<[^>]+>") {
-        s = re.replace_all(&s, " ").to_string();
-    }
-    // Decode common HTML entities
-    s = s.replace("&amp;", "&");
-    s = s.replace("&lt;", "<");
-    s = s.replace("&gt;", ">");
-    s = s.replace("&quot;", "\"");
-    s = s.replace("&#39;", "'");
-    s = s.replace("&nbsp;", " ");
-    // Collapse whitespace
-    if let Ok(re) = Regex::new(r"[ \t]+") {
-        s = re.replace_all(&s, " ").to_string();
-    }
-    // Collapse runs of blank lines
-    if let Ok(re) = Regex::new(r"\n{3,}") {
-        s = re.replace_all(&s, "\n\n").to_string();
-    }
+    s = drop_nodes(&s, &["script", "style", "noscript", "svg"]);
+    s = drop_comments(&s);
+    s = mark_blocks(&s);
+    s = strip_tags(&s);
+    s = decode_entities(&s);
+    s = collapse_ws(&s);
     s.trim().to_string()
+}
+
+fn replace(s: &str, pattern: &str, with: &str) -> String {
+    match Regex::new(pattern) {
+        Ok(re) => re.replace_all(s, with).to_string(),
+        Err(_) => s.to_string(),
+    }
+}
+
+fn drop_nodes(s: &str, tags: &[&str]) -> String {
+    let mut out = s.to_string();
+    for tag in tags {
+        let pattern = format!("(?is)<{tag}[^>]*>.*?</{tag}>");
+        out = replace(&out, &pattern, " ");
+    }
+    out
+}
+
+fn drop_comments(s: &str) -> String {
+    replace(s, r"(?s)<!--.*?-->", " ")
+}
+
+fn mark_blocks(s: &str) -> String {
+    let pattern = r"(?i)</?(p|div|h[1-6]|br|li|tr|blockquote|pre|section|article|header|footer|nav|main|aside)[^>]*/?>";
+    replace(s, pattern, "\n")
+}
+
+fn strip_tags(s: &str) -> String {
+    replace(s, r"<[^>]+>", " ")
+}
+
+fn decode_entities(s: &str) -> String {
+    s.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&nbsp;", " ")
+}
+
+fn collapse_ws(s: &str) -> String {
+    let one = replace(s, r"[ \t]+", " ");
+    replace(&one, r"\n{3,}", "\n\n")
 }
 
 const MAX_BYTES: usize = 500_000;
@@ -60,7 +64,7 @@ const MAX_BYTES: usize = 500_000;
 pub struct Fetch;
 impl Handler for Fetch {
     fn spec(&self) -> Tool {
-        def(
+        Tool::function(
             "fetch",
             "Fetch a URL via HTTP GET. Returns the response body as text (HTML is stripped to readable text). Use for research, reading documentation, checking APIs, etc.",
             json!({

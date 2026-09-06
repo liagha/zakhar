@@ -1,16 +1,24 @@
+//! OpenAI-compatible chat provider: SSE stream decoding, bounded retries
+//! with Retry-After support, transport timeouts, and strict chunk parsing.
+
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::stream::Stream;
 use futures::StreamExt;
-use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
+use reqwest::header::{HeaderMap, HeaderValue, RETRY_AFTER, USER_AGENT};
 use reqwest::Client;
 use serde_json::json;
 
 use super::types::{Chunk, Config};
 use super::{ChatStreamEvent, DeltaStream, Provider, ToolCallPart};
 use crate::types::ChatRequest;
+
+const CONNECT_TIMEOUT: u64 = 10;
+const READ_TIMEOUT: u64 = 120;
+const MAX_RETRY_DELAY: u64 = 30;
 
 pub struct OpenAI {
     id: String,
@@ -30,7 +38,12 @@ impl OpenAI {
         {
             headers.insert(USER_AGENT, ua);
         }
-        let client = Client::builder().default_headers(headers).build().unwrap();
+        let client = Client::builder()
+            .default_headers(headers)
+            .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT))
+            .read_timeout(Duration::from_secs(READ_TIMEOUT))
+            .build()
+            .unwrap();
         Self {
             id: id.to_string(),
             base_url: cfg.base_url.trim_end_matches('/').to_string(),
@@ -87,10 +100,16 @@ impl Provider for OpenAI {
                 }
                 Ok(response) => {
                     let status = response.status();
+                    let retry_in: Option<u64> = if status.as_u16() == 429 {
+                        Some(retry_delay(response.headers(), attempt))
+                    } else {
+                        None
+                    };
                     let text = response.text().await.unwrap_or_default();
-                    if status.as_u16() == 429 && attempt < self.max_retries {
-                        let delay_secs = 2u64.pow(attempt);
-                        tokio::time::sleep(tokio::time::Duration::from_secs(delay_secs)).await;
+                    if let Some(delay) = retry_in
+                        && attempt < self.max_retries
+                    {
+                        tokio::time::sleep(Duration::from_secs(delay)).await;
                         last_err = Some(anyhow::anyhow!("provider error {}: {}", status, text));
                         continue;
                     }
@@ -98,8 +117,8 @@ impl Provider for OpenAI {
                 }
                 Err(e) => {
                     if attempt < self.max_retries {
-                        let delay_secs = 2u64.pow(attempt);
-                        tokio::time::sleep(tokio::time::Duration::from_secs(delay_secs)).await;
+                        let delay = retry_delay(&HeaderMap::new(), attempt);
+                        tokio::time::sleep(Duration::from_secs(delay)).await;
                         last_err = Some(e.into());
                         continue;
                     }
@@ -110,6 +129,16 @@ impl Provider for OpenAI {
 
         Err(last_err.unwrap_or_else(|| anyhow::anyhow!("max retries exceeded")))
     }
+}
+
+fn retry_delay(headers: &HeaderMap, attempt: u32) -> u64 {
+    let fallback = 2u64.pow(attempt).min(MAX_RETRY_DELAY);
+    headers
+        .get(RETRY_AFTER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .map(|v| v.min(MAX_RETRY_DELAY))
+        .unwrap_or(fallback)
 }
 
 struct SseDecoder {
@@ -129,7 +158,7 @@ impl SseDecoder {
         for i in 0..self.buffer.len() {
             if self.buffer[i] == b'\n' {
                 let line = &self.buffer[start..i];
-                self.handle_line(line, &mut events);
+                self.handle_line(line, &mut events)?;
                 start = i + 1;
             }
         }
@@ -140,22 +169,21 @@ impl SseDecoder {
         Ok(events)
     }
 
-    fn handle_line(&self, line: &[u8], events: &mut Vec<ChatStreamEvent>) {
+    fn handle_line(&self, line: &[u8], events: &mut Vec<ChatStreamEvent>) -> anyhow::Result<()> {
         let trimmed = trim(line);
         if trimmed.is_empty() || !trimmed.starts_with(b"data:") {
-            return;
+            return Ok(());
         }
         let data = String::from_utf8_lossy(trim(&trimmed[5..])).to_string();
         if data == "[DONE]" {
             events.push(ChatStreamEvent::Done);
-            return;
+            return Ok(());
         }
 
         let chunk: Chunk = match serde_json::from_str(&data) {
             Ok(c) => c,
             Err(e) => {
-                tracing::debug!("parse failed: {e}");
-                return;
+                anyhow::bail!("malformed chunk: {e}");
             }
         };
 
@@ -182,6 +210,7 @@ impl SseDecoder {
                 }
             }
         }
+        Ok(())
     }
 }
 
@@ -239,6 +268,16 @@ impl Stream for SseStream {
 mod tests {
     use super::*;
 
+    fn empty_headers() -> HeaderMap {
+        HeaderMap::new()
+    }
+
+    fn retry_headers(seconds: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(RETRY_AFTER, HeaderValue::from_str(seconds).unwrap());
+        headers
+    }
+
     fn parse(bytes: &[u8]) -> anyhow::Result<Vec<ChatStreamEvent>> {
         let mut decoder = SseDecoder::new();
         let mut events = decoder.feed(bytes)?;
@@ -292,5 +331,26 @@ mod tests {
         assert!(e1.is_empty());
         let e2 = decoder.feed(&bytes[split..]).unwrap();
         assert!(matches!(e2[0], ChatStreamEvent::Text(ref t) if t == "\u{6c49}"));
+    }
+
+    #[test]
+    fn rejects_malformed_chunks() {
+        let mut decoder = SseDecoder::new();
+        let err = decoder.feed(b"data: {not json}\n").unwrap_err();
+        assert!(err.to_string().contains("malformed chunk"));
+    }
+
+    #[test]
+    fn retry_delay_falls_back_exponential() {
+        assert_eq!(retry_delay(&empty_headers(), 0), 1);
+        assert_eq!(retry_delay(&empty_headers(), 2), 4);
+        assert_eq!(retry_delay(&empty_headers(), 10), MAX_RETRY_DELAY);
+    }
+
+    #[test]
+    fn retry_delay_prefers_header() {
+        assert_eq!(retry_delay(&retry_headers("3"), 5), 3);
+        assert_eq!(retry_delay(&retry_headers("200"), 0), MAX_RETRY_DELAY);
+        assert_eq!(retry_delay(&retry_headers("abc"), 3), 8);
     }
 }

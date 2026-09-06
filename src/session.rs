@@ -42,6 +42,37 @@ impl Session {
         std::fs::write(&path, text)?;
         Ok(())
     }
+
+    pub fn first_user(&self) -> String {
+        self.messages
+            .iter()
+            .find(|m| m.role == Role::User)
+            .map(|m| m.content.trim().replace('\n', " "))
+            .unwrap_or_default()
+    }
+
+    pub fn last_assistant(&self) -> String {
+        self.messages
+            .iter()
+            .rev()
+            .find(|m| m.role == Role::Assistant && !m.content.trim().is_empty())
+            .map(|m| m.content.trim().to_string())
+            .unwrap_or_default()
+    }
+
+    pub fn tool_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .messages
+            .iter()
+            .filter_map(|m| m.tool_calls.as_ref())
+            .flatten()
+            .map(|t| t.name.clone())
+            .filter(|n| !n.is_empty())
+            .collect();
+        names.sort();
+        names.dedup();
+        names
+    }
 }
 
 pub fn dir() -> anyhow::Result<PathBuf> {
@@ -100,6 +131,98 @@ pub fn list_formatted() -> String {
     out
 }
 
+/// Resolve a session id or unique prefix against saved sessions.
+pub fn find(prefix: &str) -> Option<String> {
+    let sessions = list();
+    sessions
+        .iter()
+        .find(|s| s.id.starts_with(prefix))
+        .map(|s| s.id.clone())
+}
+
+/// The most recently saved session id, if any.
+pub fn last() -> Option<String> {
+    list().first().map(|s| s.id.clone())
+}
+
+pub fn diff(a: &str, b: &str) -> anyhow::Result<String> {
+    let a_id = find(a).ok_or_else(|| anyhow::anyhow!("no session matches '{a}'"))?;
+    let b_id = find(b).ok_or_else(|| anyhow::anyhow!("no session matches '{b}'"))?;
+    let sa = Session::load(&a_id)?;
+    let sb = Session::load(&b_id)?;
+    Ok(diff_sessions(&sa, &sb))
+}
+
+/// Textual comparison of two sessions: asks, tools used, final answers,
+/// and tool sets unique to each side.
+pub fn diff_sessions(a: &Session, b: &Session) -> String {
+    let a_tools = a.tool_names();
+    let b_tools = b.tool_names();
+    let fmt_date = |id: &str, created: &str| {
+        let date = chrono::DateTime::parse_from_rfc3339(created)
+            .ok()
+            .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+            .unwrap_or_else(|| created.to_string());
+        format!("{} — {}", &id[..8], date)
+    };
+    let a_title = fmt_date(&a.id, &a.created_at);
+    let b_title = fmt_date(&b.id, &b.created_at);
+
+    let a_ask = a.first_user();
+    let b_ask = b.first_user();
+    let a_done = a.last_assistant();
+    let b_done = b.last_assistant();
+
+    let a_short: String = a_done.chars().take(200).collect();
+    let b_short: String = b_done.chars().take(200).collect();
+
+    let only_a: Vec<&String> = a_tools.iter().filter(|t| !b_tools.contains(t)).collect();
+    let only_b: Vec<&String> = b_tools.iter().filter(|t| !a_tools.contains(t)).collect();
+
+    let mut out = String::from("session diff:\n");
+    out.push_str(&format!("  {a_title} — {} messages\n", a.messages.len()));
+    if !a_ask.is_empty() {
+        out.push_str(&format!("    asked: {a_ask}\n"));
+    }
+    if !a_short.is_empty() {
+        out.push_str(&format!("    done: {a_short}\n"));
+    }
+    if !a_tools.is_empty() {
+        out.push_str(&format!("    tools: {}\n", a_tools.join(", ")));
+    }
+    out.push_str(&format!("  {b_title} — {} messages\n", b.messages.len()));
+    if !b_ask.is_empty() {
+        out.push_str(&format!("    asked: {b_ask}\n"));
+    }
+    if !b_short.is_empty() {
+        out.push_str(&format!("    done: {b_short}\n"));
+    }
+    if !b_tools.is_empty() {
+        out.push_str(&format!("    tools: {}\n", b_tools.join(", ")));
+    }
+    if !only_a.is_empty() {
+        out.push_str(&format!(
+            "  in {a_title} only:\n    {}\n",
+            only_a
+                .iter()
+                .map(|t| t.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    if !only_b.is_empty() {
+        out.push_str(&format!(
+            "  in {b_title} only:\n    {}\n",
+            only_b
+                .iter()
+                .map(|t| t.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    out
+}
+
 /// Compact cross-session recap: each recent session's first user request and
 /// its final assistant answer, newest first. Used as a context block so a new
 /// session knows what was worked on before.
@@ -115,19 +238,8 @@ pub fn summarize(limit: usize) -> String {
             Ok(s) => s,
             Err(_) => continue,
         };
-        let user = s
-            .messages
-            .iter()
-            .find(|m| m.role == Role::User)
-            .map(|m| m.content.trim().replace('\n', " "))
-            .unwrap_or_default();
-        let assistant = s
-            .messages
-            .iter()
-            .rev()
-            .find(|m| m.role == Role::Assistant)
-            .map(|m| m.content.trim())
-            .unwrap_or_default();
+        let user = s.first_user();
+        let assistant = s.last_assistant();
         let date = chrono::DateTime::parse_from_rfc3339(&s.created_at)
             .ok()
             .map(|dt| dt.format("%Y-%m-%d").to_string())
@@ -140,4 +252,68 @@ pub fn summarize(limit: usize) -> String {
         parts.push(entry);
     }
     parts.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn msg(role: Role, content: &str) -> Message {
+        Message {
+            role,
+            content: content.to_string(),
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+
+    fn with_tool(m: Message, name: &str) -> Message {
+        Message {
+            tool_calls: Some(vec![crate::types::ToolCall {
+                id: "c1".to_string(),
+                name: name.to_string(),
+                arguments: serde_json::Value::Null,
+            }]),
+            ..m
+        }
+    }
+
+    #[test]
+    fn diff_reports_asks_tools_and_answers() {
+        let mut a = Session::new();
+        a.messages.push(msg(Role::User, "refactor fetch"));
+        a.messages
+            .push(with_tool(msg(Role::Assistant, "done"), "read"));
+        a.messages
+            .push(with_tool(msg(Role::Assistant, ""), "grep"));
+
+        let mut b = Session::new();
+        b.messages.push(msg(Role::User, "add timezone"));
+        b.messages
+            .push(with_tool(msg(Role::Assistant, "done"), "read"));
+        b.messages
+            .push(with_tool(msg(Role::Assistant, ""), "bash"));
+        b.messages.push(msg(Role::Assistant, "fixed"));
+
+        let out = diff_sessions(&a, &b);
+        assert!(out.contains("asked: refactor fetch"));
+        assert!(out.contains("asked: add timezone"));
+        assert!(out.contains("tools: grep, read"));
+        assert!(out.contains("tools: bash, read"));
+        assert!(out.contains("done: done"));
+        assert!(out.contains("done: fixed"));
+        assert!(out.contains("only:\n    grep"));
+        assert!(out.contains("only:\n    bash"));
+    }
+
+    #[test]
+    fn looped_tools_are_deduped() {
+        let mut s = Session::new();
+        s.messages
+            .push(with_tool(msg(Role::Assistant, ""), "read"));
+        s.messages
+            .push(with_tool(msg(Role::Assistant, ""), "read"));
+        let names = s.tool_names();
+        assert_eq!(names, vec!["read".to_string()]);
+    }
 }

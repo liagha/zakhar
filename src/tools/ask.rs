@@ -5,18 +5,7 @@ use std::sync::{Mutex, OnceLock};
 use serde_json::{json, Value};
 
 use crate::handler::Handler;
-use crate::types::{Function, Tool};
-
-fn def(name: &str, description: &str, parameters: Value) -> Tool {
-    Tool {
-        tool_type: "function".to_string(),
-        function: Function {
-            name: name.to_string(),
-            description: description.to_string(),
-            parameters,
-        },
-    }
-}
+use crate::types::Tool;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct Item {
@@ -72,7 +61,7 @@ pub fn load_persisted_todos() -> String {
 pub struct Ask;
 impl Handler for Ask {
     fn spec(&self) -> Tool {
-        def("ask", "Ask the user clarifying questions with options. Use when requirements are ambiguous or you need a decision. Returns answers as JSON.", json!({
+        Tool::function("ask", "Ask the user clarifying questions with options. Use when requirements are ambiguous or you need a decision. Returns answers as JSON.", json!({
             "type": "object",
             "properties": {
                 "questions": {
@@ -158,7 +147,7 @@ impl Handler for Ask {
 pub struct Todo;
 impl Handler for Todo {
     fn spec(&self) -> Tool {
-        def("todo", "Create and maintain a task list. Use for multi-step work: one in_progress at a time, mark completed as you go. Call at start and on progress.", json!({
+        Tool::function("todo", "Create and maintain a task list. Use for multi-step work: one in_progress at a time, mark completed as you go. Call at start and on progress.", json!({
             "type": "object",
             "properties": {
                 "todos": {

@@ -53,7 +53,12 @@ pub fn models() -> anyhow::Result<String> {
 
 pub const READONLY: &[&str] = &[
     "read", "glob", "grep", "ask", "todo", "task", "skill", "control", "context", "remember",
-    "slash", "delegate", "handoff", "session", "search", "fetch",
+    "slash", "delegate", "handoff", "session", "search", "fetch", "calc", "clipboard", "env",
+    "json", "ps", "regex",
+];
+
+pub const PARALLEL: &[&str] = &[
+    "read", "glob", "grep", "search", "fetch", "calc", "clipboard", "env", "json", "ps", "regex",
 ];
 
 pub struct Invoke {
