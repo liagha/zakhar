@@ -47,7 +47,7 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
     crate::invoke::seed_models(p.list_models());
 
     let mut inv = Invoke::new();
-    let mounted = inv.mount_mcp(&cfg);
+    let mounted = inv.mount_servers(&cfg);
     if !mounted.is_empty() {
         ui.note(&format!("mcp: {}", mounted.join(", ")));
     }

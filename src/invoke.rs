@@ -1,3 +1,6 @@
+//! Tool invocation core: a registry of `Handler`s the model can call. Also
+//! carries process-wide permission and model-seed state for the tool loop.
+
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -90,25 +93,23 @@ impl Invoke {
         self.tools.insert(name, handler);
     }
 
-    pub fn mount_mcp(&mut self, cfg: &Config) -> Vec<String> {
+    pub fn mount_servers(&mut self, cfg: &Config) -> Vec<String> {
         let mut labels = Vec::new();
         for (server_key, server) in &cfg.mcp.servers {
             match crate::mcp::client::connect(server_key, server) {
                 Ok(client) => {
                     let prefix = crate::mcp::sanitize(server_key);
-                    let mut added = 0usize;
                     for tool in client.tools().to_vec() {
                         let label = format!("{prefix}__{}", crate::mcp::sanitize(&tool.name));
-                        let mut tool = tool;
-                        tool.description = format!(
-                            "MCP tool `{}` on server `{}`.\n{}",
-                            tool.name, server_key, tool.description
+                        let handler = crate::mcp::client::RemoteHandler::new(
+                            label.clone(),
+                            server_key,
+                            client.clone(),
+                            tool,
                         );
-                        let handler = crate::mcp::client::make_handler(label.clone(), client.clone(), tool);
                         self.tools.insert(label, Box::new(handler));
-                        added += 1;
                     }
-                    labels.push(format!("{server_key} ({added} tool(s))"));
+                    labels.push(format!("{server_key} ({} tool(s))", client.tools().len()));
                 }
                 Err(e) => eprintln!("[mcp] {server_key}: {e}"),
             }

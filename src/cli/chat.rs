@@ -78,7 +78,7 @@ pub async fn chat(
     };
 
     if let Some(inv) = &mut invoke {
-        let mounted = inv.mount_mcp(&cfg);
+        let mounted = inv.mount_servers(&cfg);
         if !mounted.is_empty() {
             ui.note(&format!("mcp: {}", mounted.join(", ")));
         }

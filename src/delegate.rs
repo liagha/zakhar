@@ -197,7 +197,7 @@ pub async fn run(
         ));
     }
     let mut invoke = Invoke::new();
-    let _ = invoke.mount_mcp(cfg);
+    let _ = invoke.mount_servers(cfg);
     let allowed = agent_cfg.tools.as_slice();
     let mut tools = if allowed.is_empty() {
         invoke.definitions()

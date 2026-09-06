@@ -1,3 +1,7 @@
+//! CLI entry point: parses the `zakhar` command line and dispatches to the
+//! engine. Most commands (chat, shout, mobile, daemon, mcp) delegate to the
+//! library; paths/clean/completion run first without migrations.
+
 use zakhar::cli::{chat, clean, daemon, mobile, models, shout};
 
 use clap::{CommandFactory, Parser, Subcommand};

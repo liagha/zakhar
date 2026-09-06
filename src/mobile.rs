@@ -162,7 +162,7 @@ fn run_turn(session: Arc<Session>, provider: Box<dyn Provider>, messages_json: S
 
         let mut inv = crate::invoke::Invoke::new();
         let cfg = crate::config::Config::load().unwrap_or_default();
-        let _ = inv.mount_mcp(&cfg);
+        let _ = inv.mount_servers(&cfg);
         let tools = inv.definitions();
 
         let mut runner = crate::agent::Runner::new(provider.as_ref(), model, None);

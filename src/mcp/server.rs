@@ -1,3 +1,7 @@
+//! MCP server: `zakhar mcp` serves a fixed allowlist of read-only and
+//! knowledge tools over stdio, so any MCP client can drive them. Interactive
+//! and stdout-writing tools are never exposed.
+
 use std::io::BufRead;
 use std::sync::Mutex;
 
@@ -25,7 +29,7 @@ const ALLOWED: &[&str] = &[
     "time",
 ];
 
-fn tool_entries(defs: &[Tool]) -> Vec<Value> {
+fn tool_list(defs: &[Tool]) -> Vec<Value> {
     defs.iter()
         .filter(|t| ALLOWED.contains(&t.function.name.as_str()))
         .map(|t| {
@@ -108,7 +112,7 @@ pub fn handle(msg: &Value, invoke: &Mutex<Invoke>) -> Option<Value> {
             }))
         }
         "tools/list" | "tools/list_changed" => {
-            respond(json!({ "tools": tool_entries(&invoke.lock().unwrap().definitions()) }))
+            respond(json!({ "tools": tool_list(&invoke.lock().unwrap().definitions()) }))
         }
         _ => respond_err(-32601, format!("method not found: {method}")),
     }

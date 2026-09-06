@@ -1,3 +1,8 @@
+//! MCP client: connects to an external server, runs the initialize/tools/list
+//! handshake over newline-delimited JSON-RPC, and exposes each remote tool as
+//! a zakhar `Handler`. Connections are cached per server and serialized so a
+//! single child process serves every mount site.
+
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -6,15 +11,15 @@ use std::sync::{mpsc, Arc, Mutex, OnceLock};
 
 use serde_json::{json, Value};
 
-use crate::config::McpServer;
+use crate::config::Server;
 use crate::handler::Handler;
-use crate::types::Tool;
 use crate::mcp::{CALL_TIMEOUT, PROTOCOL_VERSION};
+use crate::types::Tool;
 
 static CACHE: OnceLock<Mutex<HashMap<String, Arc<Client>>>> = OnceLock::new();
 
 #[derive(Debug, Clone)]
-pub struct McpTool {
+pub struct RemoteTool {
     pub name: String,
     pub description: String,
     pub input_schema: Value,
@@ -24,12 +29,12 @@ pub struct Client {
     child: Mutex<Child>,
     stdin: Mutex<Option<ChildStdin>>,
     responses: Mutex<mpsc::Receiver<(u64, Result<Value, String>)>>,
-    tools: Vec<McpTool>,
+    tools: Vec<RemoteTool>,
     next_id: AtomicU64,
     gate: Mutex<()>,
 }
 
-pub fn connect(server_key: &str, cfg: &McpServer) -> anyhow::Result<Arc<Client>> {
+pub fn connect(server_key: &str, cfg: &Server) -> anyhow::Result<Arc<Client>> {
     let cell = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     if let Some(existing) = cell.lock().unwrap().get(server_key) {
         return Ok(existing.clone());
@@ -60,7 +65,7 @@ pub fn connect(server_key: &str, cfg: &McpServer) -> anyhow::Result<Arc<Client>>
         if name.is_empty() {
             continue;
         }
-        tools.push(McpTool {
+        tools.push(RemoteTool {
             name,
             description: item
                 .get("description")
@@ -81,7 +86,7 @@ pub fn connect(server_key: &str, cfg: &McpServer) -> anyhow::Result<Arc<Client>>
     Ok(client)
 }
 
-fn spawn(cfg: &McpServer) -> anyhow::Result<Client> {
+fn spawn(cfg: &Server) -> anyhow::Result<Client> {
     let mut child = Command::new(&cfg.command)
         .args(&cfg.args)
         .stdin(Stdio::piped())
@@ -199,7 +204,7 @@ impl Client {
         Ok(())
     }
 
-    pub fn tools(&self) -> &[McpTool] {
+    pub fn tools(&self) -> &[RemoteTool] {
         &self.tools
     }
 
@@ -212,17 +217,34 @@ impl Client {
     }
 }
 
-pub fn make_handler(label: String, client: Arc<Client>, tool: McpTool) -> McpToolHandler {
-    McpToolHandler { client, label, tool }
-}
-
-pub struct McpToolHandler {
+pub struct RemoteHandler {
     client: Arc<Client>,
     label: String,
-    tool: McpTool,
+    tool: RemoteTool,
 }
 
-impl Handler for McpToolHandler {
+impl RemoteHandler {
+    pub fn new(
+        label: String,
+        server_key: &str,
+        client: Arc<Client>,
+        tool: RemoteTool,
+    ) -> Self {
+        Self {
+            client,
+            label,
+            tool: RemoteTool {
+                description: format!(
+                    "MCP tool `{}` on server `{}`.\n{}",
+                    tool.name, server_key, tool.description
+                ),
+                ..tool
+            },
+        }
+    }
+}
+
+impl Handler for RemoteHandler {
     fn spec(&self) -> Tool {
         Tool::function(
             &self.label,

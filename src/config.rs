@@ -1,3 +1,6 @@
+//! Runtime configuration: providers, agents, levels, capabilities, UI colors,
+//! and external MCP servers, all read from `~/.zakhar/config/config.toml`.
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -28,11 +31,11 @@ pub struct Config {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Mcp {
     #[serde(default)]
-    pub servers: HashMap<String, McpServer>,
+    pub servers: HashMap<String, Server>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct McpServer {
+pub struct Server {
     pub command: String,
     #[serde(default)]
     pub args: Vec<String>,
