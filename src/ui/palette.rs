@@ -149,6 +149,7 @@ mod tests {
 
     fn force() {
         colored::control::set_override(true);
+        unsafe { std::env::set_var("COLORTERM", "truecolor") };
     }
 
     #[test]
