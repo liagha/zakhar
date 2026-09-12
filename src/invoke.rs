@@ -254,4 +254,22 @@ mod tests {
             .iter()
             .any(|t| t.function.name == "stub"));
     }
+
+    #[test]
+    fn mount_servers_dead_binary_returns_empty() {
+        let cfg = Config {
+            mcp: crate::config::Mcp {
+                servers: std::collections::HashMap::from([(
+                    "dead".to_string(),
+                    crate::config::Server {
+                        command: "/definitely/missing/binary".to_string(),
+                        args: vec![],
+                        env: std::collections::HashMap::new(),
+                    },
+                )]),
+            },
+            ..Default::default()
+        };
+        assert_eq!(Invoke::new().mount_servers(&cfg).len(), 0);
+    }
 }

@@ -82,7 +82,12 @@ pub fn record(tool: &str, args: &serde_json::Value, outcome: &str, revert: Optio
     let mut all = read();
     all.push(entry);
     if all.len() > CAP {
-        all.drain(..(all.len() - CAP).min(TRIM));
+        let overflow: Vec<Entry> = all.drain(..(all.len() - CAP).min(TRIM)).collect();
+        for e in overflow {
+            if e.revert.is_some() {
+                let _ = std::fs::remove_file(back_dir().join(format!("{}.bak", e.id)));
+            }
+        }
     }
     write_all(&all)
 }
@@ -199,6 +204,41 @@ mod tests {
         record("bash", &serde_json::json!({"command": "echo hi"}), "ran", None).unwrap();
         let out = undo(1).unwrap();
         assert!(out.contains("nothing reversible"), "got: {out}");
+        std::env::set_current_dir(&orig).unwrap();
+    }
+
+    #[test]
+    fn trim_removes_backups_of_dropped_entries() {
+        let (dir, _g) = tmp_root();
+        let orig = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir.path()).unwrap();
+        let back = back_dir();
+        std::fs::create_dir_all(&back).unwrap();
+        let args = serde_json::json!({"path": "x"});
+        let seed: Vec<Entry> = (0..2100)
+            .map(|i| Entry {
+                id: format!("e{i:04}"),
+                ts: Utc::now().to_rfc3339(),
+                tool: "write".to_string(),
+                args: args.clone(),
+                digest: digest_of(&args),
+                outcome: "wrote".to_string(),
+                revert: Some(Revert { path: "x".to_string(), old_b64: String::new() }),
+                reverted_at: None,
+            })
+            .collect();
+        for e in &seed {
+            std::fs::write(back.join(format!("{}.bak", e.id)), "").unwrap();
+        }
+        write_all(&seed).unwrap();
+        record("read", &args, "ok", None).unwrap();
+        let entries = read();
+        assert_eq!(entries.len(), 2000);
+        assert_eq!(entries[0].id, "e0101");
+        assert_eq!(std::fs::read_dir(&back).unwrap().count(), 1999);
+        assert!(!back.join("e0000.bak").exists());
+        assert!(!back.join("e0100.bak").exists());
+        assert!(back.join("e0101.bak").exists());
         std::env::set_current_dir(&orig).unwrap();
     }
 }

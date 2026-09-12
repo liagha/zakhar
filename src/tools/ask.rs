@@ -205,3 +205,96 @@ impl Handler for Todo {
         Ok(out)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp() -> (tempfile::TempDir, std::sync::MutexGuard<'static, ()>) {
+        let guard = crate::memory::lock();
+        let dir = tempfile::tempdir().unwrap();
+        crate::paths::set_home(dir.path().join(".zakhar"));
+        (dir, guard)
+    }
+
+    #[test]
+    fn ask_missing_questions_errors() {
+        let err = Ask.run(&json!({})).unwrap_err().to_string();
+        assert_eq!(err, "missing questions");
+    }
+
+    #[test]
+    fn ask_empty_questions_errors() {
+        let err = Ask.run(&json!({"questions": []})).unwrap_err().to_string();
+        assert_eq!(err, "questions is empty");
+    }
+
+    #[test]
+    fn todo_roundtrip_persists_and_renders() {
+        let (_dir, _g) = tmp();
+        let out = Todo
+            .run(&json!({"todos": [
+                {"content": "alpha", "status": "pending", "priority": "high"},
+                {"content": "beta", "status": "completed", "priority": "low"}
+            ]}))
+            .unwrap();
+        assert!(out.starts_with("[todo] 2 todos:"), "got: {out}");
+        assert!(out.contains("  ○ [pending] alpha (high)"), "got: {out}");
+        assert!(out.contains("  ✓ [completed] beta (low)"), "got: {out}");
+        let stored: Vec<Item> =
+            serde_json::from_str(&std::fs::read_to_string(todo_path()).unwrap()).unwrap();
+        assert_eq!(stored.len(), 2);
+        assert_eq!(stored[0].content, "alpha");
+    }
+
+    #[test]
+    fn todo_invalid_status_errors() {
+        let (_dir, _g) = tmp();
+        let err = Todo
+            .run(&json!({"todos": [{"content": "x", "status": "nope", "priority": "high"}]}))
+            .unwrap_err()
+            .to_string();
+        assert_eq!(err, "invalid status nope");
+    }
+
+    #[test]
+    fn todo_two_in_progress_errors() {
+        let (_dir, _g) = tmp();
+        let err = Todo
+            .run(&json!({"todos": [
+                {"content": "a", "status": "in_progress", "priority": "high"},
+                {"content": "b", "status": "in_progress", "priority": "medium"}
+            ]}))
+            .unwrap_err()
+            .to_string();
+        assert_eq!(err, "only one task may be in_progress at a time, got 2");
+    }
+
+    #[test]
+    fn load_persisted_todos_renders_icons() {
+        let (_dir, _g) = tmp();
+        std::fs::create_dir_all(todo_path().parent().unwrap()).unwrap();
+        std::fs::write(
+            todo_path(),
+            serde_json::to_string(&json!([
+                {"content": "a", "status": "pending", "priority": "high"},
+                {"content": "b", "status": "in_progress", "priority": "medium"},
+                {"content": "c", "status": "cancelled", "priority": "low"}
+            ]))
+            .unwrap(),
+        )
+        .unwrap();
+        let out = load_persisted_todos();
+        assert!(out.contains("  ○ [pending] a (high)"), "got: {out}");
+        assert!(out.contains("  ● [in_progress] b (medium)"), "got: {out}");
+        assert!(out.contains("  ✗ [cancelled] c (low)"), "got: {out}");
+    }
+
+    #[test]
+    fn load_persisted_todos_empty_is_blank() {
+        let (_dir, _g) = tmp();
+        std::fs::create_dir_all(todo_path().parent().unwrap()).unwrap();
+        std::fs::write(todo_path(), "[]").unwrap();
+        assert_eq!(load_persisted_todos(), "");
+    }
+}

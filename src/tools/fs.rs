@@ -134,3 +134,116 @@ impl Handler for Grep {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_returns_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("note.txt");
+        std::fs::write(&path, "hello").unwrap();
+        assert_eq!(Read.run(&json!({"path": path})).unwrap(), "hello");
+    }
+
+    #[test]
+    fn read_missing_path_errors() {
+        let err = Read.run(&json!({})).unwrap_err().to_string();
+        assert_eq!(err, "missing path");
+    }
+
+    #[test]
+    fn write_creates_parents_and_reports_len() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sub/deep/note.txt");
+        let out = Write.run(&json!({"path": path, "content": "abcd"})).unwrap();
+        assert_eq!(out, "wrote 4");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "abcd");
+    }
+
+    #[test]
+    fn write_missing_args_error() {
+        let err = Write.run(&json!({})).unwrap_err().to_string();
+        assert_eq!(err, "missing path");
+        let err = Write.run(&json!({"path": "x"})).unwrap_err().to_string();
+        assert_eq!(err, "missing content");
+    }
+
+    #[test]
+    fn edit_unique_match_replaces() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("note.txt");
+        std::fs::write(&path, "one two one").unwrap();
+        let out = Edit
+            .run(&json!({"path": path, "old_string": "two", "new_string": "TWO"}))
+            .unwrap();
+        assert_eq!(out, format!("replaced 1 occurrence in {}", path.display()));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "one TWO one");
+    }
+
+    #[test]
+    fn edit_no_match_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("note.txt");
+        std::fs::write(&path, "hello").unwrap();
+        let err = Edit
+            .run(&json!({"path": path, "old_string": "zzz", "new_string": "x"}))
+            .unwrap_err()
+            .to_string();
+        assert_eq!(err, format!("old_string not found in {}", path.display()));
+    }
+
+    #[test]
+    fn edit_ambiguous_match_requires_replace_all() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("note.txt");
+        std::fs::write(&path, "a b a").unwrap();
+        let err = Edit
+            .run(&json!({"path": path, "old_string": "a", "new_string": "c"}))
+            .unwrap_err()
+            .to_string();
+        assert!(err.starts_with("Found 2 matches"), "got: {err}");
+        assert!(err.contains("replace_all=true"));
+    }
+
+    #[test]
+    fn edit_replace_all_replaces_everywhere() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("note.txt");
+        std::fs::write(&path, "a b a").unwrap();
+        let out = Edit
+            .run(&json!({"path": path, "old_string": "a", "new_string": "c", "replace_all": true}))
+            .unwrap();
+        assert_eq!(out, format!("replaced 2 occurrence(s) in {}", path.display()));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "c b c");
+    }
+
+    #[test]
+    fn glob_finds_matching_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "").unwrap();
+        std::fs::write(dir.path().join("b.md"), "").unwrap();
+        let pattern = dir.path().join("*.txt");
+        let out = Glob.run(&json!({"pattern": pattern})).unwrap();
+        assert!(out.contains("a.txt"), "got: {out}");
+        assert!(!out.contains("b.md"));
+    }
+
+    #[test]
+    fn glob_missing_pattern_errors() {
+        let err = Glob.run(&json!({})).unwrap_err().to_string();
+        assert_eq!(err, "missing pattern");
+    }
+
+    #[test]
+    fn grep_reports_hits_and_misses() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("note.txt");
+        std::fs::write(&path, "hello world\nfoo bar").unwrap();
+        let out = Grep.run(&json!({"pattern": "hello", "path": path})).unwrap();
+        assert!(out.contains("hello world"), "got: {out}");
+        let miss = Grep.run(&json!({"pattern": "zzz", "path": path})).unwrap();
+        assert_eq!(miss, "no matches");
+    }
+}

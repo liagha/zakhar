@@ -2,6 +2,18 @@ use serde_json::json;
 
 #[test]
 fn mobile_mock_turn() {
+    let original = std::env::var_os("HOME");
+    let home = tempfile::tempdir().unwrap();
+    unsafe { std::env::set_var("HOME", home.path()) };
+    let run = std::panic::catch_unwind(turn_body);
+    match original {
+        Some(v) => unsafe { std::env::set_var("HOME", v) },
+        None => unsafe { std::env::remove_var("HOME") },
+    }
+    assert!(run.is_ok(), "mobile mock turn panicked");
+}
+
+fn turn_body() {
     let messages = json!([{"role":"user","content":"hello"}]).to_string();
     let provider = Box::new(zakhar::provider::mock::Script {
         name: "script".to_string(),

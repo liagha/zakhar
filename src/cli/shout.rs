@@ -347,3 +347,28 @@ struct ToolCallPartAccum {
     name: String,
     arguments: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn permission_phrases_grant() {
+        assert!(phrase_grants_permission("you have my permission"));
+        assert!(phrase_grants_permission("Go Ahead"));
+        assert!(phrase_grants_permission("don't ask"));
+        assert!(phrase_grants_permission("do it freely"));
+        assert!(!phrase_grants_permission("read the file"));
+        assert!(!phrase_grants_permission("write a script"));
+    }
+
+    #[test]
+    fn mutating_classification() {
+        assert!(is_mutating("bash"));
+        assert!(is_mutating("write"));
+        assert!(is_mutating("edit"));
+        assert!(!is_mutating("read"));
+        assert!(!is_mutating("calc"));
+        assert!(!is_mutating("json"));
+    }
+}
