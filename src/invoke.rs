@@ -150,3 +150,108 @@ impl Invoke {
         outcome
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn tmp() -> (tempfile::TempDir, std::sync::MutexGuard<'static, ()>) {
+        let guard = crate::memory::lock();
+        let dir = tempfile::tempdir().unwrap();
+        crate::paths::set_home(dir.path().join(".zakhar"));
+        (dir, guard)
+    }
+
+    struct Stub {
+        name: String,
+    }
+
+    impl Handler for Stub {
+        fn spec(&self) -> Tool {
+            Tool::function(&self.name, "stub handler", json!({"type": "object"}))
+        }
+
+        fn run(&self, _args: &Value) -> anyhow::Result<String> {
+            Ok(self.name.clone())
+        }
+    }
+
+    #[test]
+    fn missing_tool_reports_error() {
+        let (_dir, _g) = tmp();
+        let out = Invoke::new().exec("nope", &json!({}));
+        assert_eq!(out, "error: unknown tool: nope");
+    }
+
+    #[test]
+    fn read_records_ledger_entry() {
+        let (dir, _g) = tmp();
+        let path = dir.path().join("note.txt");
+        std::fs::write(&path, "hello").unwrap();
+        let before = crate::ledger::read().len();
+        let invoke = Invoke::new();
+        let out = invoke.exec("read", &json!({"path": path}));
+        assert!(out.contains("hello"), "got: {out}");
+        assert!(!out.starts_with("error:"));
+        let entries = crate::ledger::read();
+        assert!(entries.len() > before, "no new ledger entry");
+        let last = entries.last().unwrap();
+        assert_eq!(last.tool, "read");
+        assert_eq!(last.outcome, out);
+    }
+
+    #[test]
+    fn failing_handler_reports_error_and_records() {
+        let (_dir, _g) = tmp();
+        let before = crate::ledger::read().len();
+        let invoke = Invoke::new();
+        let out = invoke.exec("read", &json!({"path": "/no/such/file"}));
+        assert!(out.starts_with("error:"), "got: {out}");
+        let entries = crate::ledger::read();
+        assert!(entries.len() > before, "no new ledger entry");
+        assert_eq!(entries.last().unwrap().tool, "read");
+        assert_eq!(entries.last().unwrap().outcome, out);
+    }
+
+    #[test]
+    fn write_snapshots_and_records() {
+        let (dir, _g) = tmp();
+        let path = dir.path().join("sub/notes.txt");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "v1").unwrap();
+        let invoke = Invoke::new();
+        let before = crate::ledger::read().len();
+        let out = invoke.exec("write", &json!({"path": path, "content": "v2"}));
+        assert!(out.starts_with("wrote"), "got: {out}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "v2");
+        let entries = crate::ledger::read();
+        assert_eq!(entries.len(), before + 1);
+        assert!(entries.last().unwrap().revert.is_some(), "write must snapshot");
+        let restore = crate::ledger::undo(1).unwrap();
+        assert!(restore.contains("reverted 1"), "got: {restore}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "v1");
+    }
+
+    #[test]
+    fn definitions_follow_allowed_filter() {
+        let invoke = Invoke::new();
+        let all = invoke.definitions();
+        assert!(all.len() > 10);
+        assert_eq!(invoke.filtered_definitions(&[]).len(), all.len());
+        let only = invoke.filtered_definitions(&["read".to_string()]);
+        assert_eq!(only.len(), 1);
+        assert_eq!(only[0].function.name, "read");
+    }
+
+    #[test]
+    fn mount_adds_handler() {
+        let mut invoke = Invoke::new();
+        invoke.mount("stub".to_string(), Box::new(Stub { name: "stub".to_string() }));
+        assert_eq!(invoke.exec("stub", &json!({})), "stub");
+        assert!(invoke
+            .definitions()
+            .iter()
+            .any(|t| t.function.name == "stub"));
+    }
+}

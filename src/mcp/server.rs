@@ -1,6 +1,7 @@
 //! MCP server: `zakhar mcp` serves a fixed allowlist of read-only and
-//! knowledge tools over stdio, so any MCP client can drive them. Interactive
-//! and stdout-writing tools are never exposed.
+//! knowledge tools plus read-only resources and a digest prompt over stdio,
+//! so any MCP client can drive them. Interactive and stdout-writing tools are
+//! never exposed.
 
 use std::io::BufRead;
 use std::sync::Mutex;
@@ -28,6 +29,29 @@ const ALLOWED: &[&str] = &[
     "session",
     "time",
 ];
+
+const RESOURCES: &[(&str, &str, &str)] = &[
+    (
+        "zakhar://memory/knowledge",
+        "saved knowledge",
+        "notes learned across sessions",
+    ),
+    (
+        "zakhar://memory/events",
+        "recent events",
+        "recent episodic log",
+    ),
+    ("zakhar://sessions", "saved sessions", "list of saved sessions"),
+];
+
+fn resource_text(uri: &str) -> Option<String> {
+    match uri {
+        "zakhar://memory/knowledge" => Some(crate::memory::knowledge::block(20)),
+        "zakhar://memory/events" => Some(crate::memory::episodic::block(30)),
+        "zakhar://sessions" => Some(crate::session::list_formatted()),
+        _ => None,
+    }
+}
 
 fn tool_list(defs: &[Tool]) -> Vec<Value> {
     defs.iter()
@@ -91,7 +115,11 @@ pub fn handle(msg: &Value, invoke: &Mutex<Invoke>) -> Option<Value> {
     match method {
         "initialize" => respond(json!({
             "protocolVersion": PROTOCOL_VERSION,
-            "capabilities": { "tools": { "listChanged": false } },
+            "capabilities": {
+                "tools": { "listChanged": false },
+                "resources": { "subscribe": false },
+                "prompts": {},
+            },
             "serverInfo": { "name": "zakhar", "version": env!("CARGO_PKG_VERSION") },
         })),
         "ping" => respond(json!({})),
@@ -113,6 +141,66 @@ pub fn handle(msg: &Value, invoke: &Mutex<Invoke>) -> Option<Value> {
         }
         "tools/list" | "tools/list_changed" => {
             respond(json!({ "tools": tool_list(&invoke.lock().unwrap().definitions()) }))
+        }
+        "resources/list" => respond(json!({
+            "resources": RESOURCES
+                .iter()
+                .map(|(uri, name, description)| json!({
+                    "uri": uri,
+                    "name": name,
+                    "description": description,
+                    "mimeType": "text/plain",
+                }))
+                .collect::<Vec<_>>(),
+        })),
+        "resources/read" => {
+            let uri = params.get("uri").and_then(Value::as_str).unwrap_or("");
+            if uri.is_empty() {
+                return respond_err(-32602, "missing uri".to_string());
+            }
+            match resource_text(uri) {
+                Some(text) => respond(json!({
+                    "content": [ { "uri": uri, "mimeType": "text/plain", "text": text } ],
+                })),
+                None => respond_err(-32002, format!("resource not found: {uri}")),
+            }
+        }
+        "prompts/list" => respond(json!({
+            "prompts": [{
+                "name": "daily",
+                "description": "daily digest of knowledge, recent events, and saved sessions",
+                "arguments": [],
+            }],
+        })),
+        "prompts/get" => {
+            let name = params.get("name").and_then(Value::as_str).unwrap_or("");
+            if name != "daily" {
+                return respond_err(-32602, format!("no such prompt: {name}"));
+            }
+            respond(json!({
+                "description": "daily digest of knowledge, recent events, and saved sessions",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": {
+                            "type": "text",
+                            "text": "You write concise, human-ready daily digests.",
+                        },
+                    },
+                    {
+                        "role": "user",
+                        "content": {
+                            "type": "text",
+                            "text": format!(
+                                "knowledge:\n{}\nrecent events:\n{}\nsaved sessions:\n{}",
+                                crate::memory::knowledge::block(20),
+                                crate::memory::episodic::block(30),
+                                crate::session::list_formatted(),
+                            ),
+                        },
+                    },
+                ],
+            }))
         }
         _ => respond_err(-32601, format!("method not found: {method}")),
     }
@@ -200,5 +288,125 @@ mod tests {
         let msg = json!({ "jsonrpc": "2.0", "id": 5, "method": "nope", "params": {} });
         let out = handle(&msg, &server()).unwrap();
         assert_eq!(out["error"]["code"], -32601);
+    }
+
+    fn tmp() -> (tempfile::TempDir, std::sync::MutexGuard<'static, ()>) {
+        let guard = crate::memory::lock();
+        let dir = tempfile::tempdir().unwrap();
+        crate::paths::set_home(dir.path().join(".zakhar"));
+        (dir, guard)
+    }
+
+    #[test]
+    fn resources_list_advertises() {
+        let (_dir, _g) = tmp();
+        let msg = json!({ "jsonrpc": "2.0", "id": 6, "method": "resources/list", "params": {} });
+        let out = handle(&msg, &server()).unwrap();
+        let uris: Vec<&str> = out["result"]["resources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["uri"].as_str().unwrap())
+            .collect();
+        for uri in ["zakhar://memory/knowledge", "zakhar://memory/events", "zakhar://sessions"] {
+            assert!(uris.contains(&uri), "missing {uri}: {uris:?}");
+        }
+    }
+
+    #[test]
+    fn resources_read_returns_blocks() {
+        let (dir, _g) = tmp();
+        crate::memory::knowledge::set_path(dir.path().join("memory/knowledge.jsonl"));
+        crate::memory::set_path(dir.path().join("memory/episodic.jsonl"));
+        crate::memory::knowledge::save_pair("router ip", "192.168.1.1", "test").unwrap();
+        crate::memory::episodic::append("note", "started the server").unwrap();
+        let invoke = server();
+        for (uri, needle) in [
+            ("zakhar://memory/knowledge", "router ip"),
+            ("zakhar://memory/events", "started the server"),
+        ] {
+            let msg = json!({
+                "jsonrpc": "2.0",
+                "id": 7,
+                "method": "resources/read",
+                "params": { "uri": uri },
+            });
+            let out = handle(&msg, &invoke).unwrap();
+            let text = out["result"]["content"][0]["text"].as_str().unwrap();
+            assert!(text.contains(needle), "{uri}: {text}");
+        }
+    }
+
+    #[test]
+    fn resources_read_sessions_and_missing() {
+        let (_dir, _g) = tmp();
+        let invoke = server();
+        let msg = json!({
+            "jsonrpc": "2.0",
+            "id": 8,
+            "method": "resources/read",
+            "params": { "uri": "zakhar://nope" },
+        });
+        let out = handle(&msg, &invoke).unwrap();
+        assert_eq!(out["error"]["code"], -32002);
+        let msg = json!({
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "resources/read",
+            "params": {},
+        });
+        let out = handle(&msg, &invoke).unwrap();
+        assert_eq!(out["error"]["code"], -32602);
+    }
+
+    #[test]
+    fn prompts_list_and_get() {
+        let (_dir, _g) = tmp();
+        let invoke = server();
+        let list = json!({ "jsonrpc": "2.0", "id": 10, "method": "prompts/list", "params": {} });
+        let out = handle(&list, &invoke).unwrap();
+        let names: Vec<&str> = out["result"]["prompts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["name"].as_str().unwrap())
+            .collect();
+        assert!(names.contains(&"daily"), "got: {names:?}");
+        let get = json!({
+            "jsonrpc": "2.0",
+            "id": 11,
+            "method": "prompts/get",
+            "params": { "name": "daily" },
+        });
+        let out = handle(&get, &invoke).unwrap();
+        assert!(!out["result"]["messages"].as_array().unwrap().is_empty());
+        assert!(out["result"]["messages"][1]["content"]["text"]
+            .as_str()
+            .unwrap()
+            .contains("recent events:"));
+        let bad = json!({
+            "jsonrpc": "2.0",
+            "id": 12,
+            "method": "prompts/get",
+            "params": { "name": "nope" },
+        });
+        let out = handle(&bad, &invoke).unwrap();
+        assert_eq!(out["error"]["code"], -32602);
+    }
+
+    #[test]
+    fn initialize_advertises_resources_and_prompts() {
+        let (_dir, _g) = tmp();
+        let msg = json!({
+            "jsonrpc": "2.0",
+            "id": 13,
+            "method": "initialize",
+            "params": { "protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {} }
+        });
+        let out = handle(&msg, &server()).unwrap();
+        assert!(out["result"]["capabilities"]["resources"]
+            .as_object()
+            .is_some());
+        assert!(out["result"]["capabilities"]["prompts"].as_object().is_some());
     }
 }

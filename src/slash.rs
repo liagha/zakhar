@@ -341,3 +341,328 @@ fn kill_tasks(args: &str) -> String {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::Runner;
+    use crate::provider::mock::Script;
+    use crate::types::{Message, Role};
+    use serde_json::json;
+
+    fn tmp() -> (tempfile::TempDir, std::sync::MutexGuard<'static, ()>) {
+        let guard = crate::memory::lock();
+        let dir = tempfile::tempdir().unwrap();
+        crate::paths::set_home(dir.path().join(".zakhar"));
+        (dir, guard)
+    }
+
+    fn runner(provider: &Script) -> Runner<'_> {
+        Runner::new(provider, provider.name.clone(), None)
+    }
+
+    fn session_with(count: usize) -> crate::session::Session {
+        let mut s = crate::session::Session::new();
+        s.messages.push(Message::system("sys"));
+        for i in 0..count {
+            s.messages.push(Message::user(format!("u{i}")));
+            s.messages.push(Message::assistant(format!("a{i}"), None));
+        }
+        s
+    }
+
+    #[test]
+    fn plain_input_returns_none() {
+        let (_dir, _g) = tmp();
+        let provider = Script { name: "m".into(), answer: "ok".into() };
+        let mut r = runner(&provider);
+        let mut s = crate::session::Session::new();
+        assert!(handle_user("hello world", &mut s, &mut r).is_none());
+    }
+
+    #[test]
+    fn clear_keeps_system_only() {
+        let (_dir, _g) = tmp();
+        let provider = Script { name: "m".into(), answer: "ok".into() };
+        let mut r = runner(&provider);
+        r.push(Message::system("bot sys"));
+        r.push(Message::user("user ask"));
+        let mut s = crate::session::Session::new();
+        s.messages.push(Message::system("sys"));
+        s.messages.push(Message::user("hello"));
+        s.messages.push(Message::assistant("hi", None));
+        let out = handle_user("/clear", &mut s, &mut r).unwrap();
+        assert_eq!(out, "cleared session, removed 2 messages");
+        assert_eq!(s.messages.len(), 1);
+        assert_eq!(r.messages().len(), 1);
+        assert!(crate::session::list().iter().any(|i| i.id == s.id));
+    }
+
+    #[test]
+    fn compact_small_session_is_noop() {
+        let (_dir, _g) = tmp();
+        let provider = Script { name: "m".into(), answer: "ok".into() };
+        let mut r = runner(&provider);
+        let mut s = session_with(1);
+        let out = handle_user("/compact", &mut s, &mut r).unwrap();
+        assert_eq!(out, "nothing to compact");
+        assert_eq!(s.messages.len(), 3);
+    }
+
+    #[test]
+    fn compact_keeps_tail_and_marks_summary() {
+        let (_dir, _g) = tmp();
+        let provider = Script { name: "m".into(), answer: "ok".into() };
+        let mut r = runner(&provider);
+        let mut s = session_with(12);
+        let out = handle_user("/compact", &mut s, &mut r).unwrap();
+        assert_eq!(out, "compacted 15 messages, kept 10");
+        assert_eq!(s.messages.len(), 11);
+        assert_eq!(s.messages[0].role, Role::System);
+        assert!(s.messages[0].content.contains("summarized 15"), "got: {}", s.messages[0].content);
+    }
+
+    #[test]
+    fn unknown_command_reports_help() {
+        let (_dir, _g) = tmp();
+        let provider = Script { name: "m".into(), answer: "ok".into() };
+        let mut r = runner(&provider);
+        let mut s = crate::session::Session::new();
+        let out = handle_user("/bogus", &mut s, &mut r).unwrap();
+        assert_eq!(out, "unknown slash command /bogus. Try /help");
+    }
+
+    #[test]
+    fn help_lists_commands() {
+        let (_dir, _g) = tmp();
+        let provider = Script { name: "m".into(), answer: "ok".into() };
+        let mut r = runner(&provider);
+        let mut s = crate::session::Session::new();
+        let out = handle_user("/help", &mut s, &mut r).unwrap();
+        assert!(out.contains("/clear"), "got: {out}");
+        assert!(out.contains("/undo"), "got: {out}");
+        assert!(out.contains("/diff"), "got: {out}");
+    }
+
+    #[test]
+    fn agents_without_config_says_none() {
+        let (_dir, _g) = tmp();
+        let provider = Script { name: "m".into(), answer: "ok".into() };
+        let mut r = runner(&provider);
+        let mut s = crate::session::Session::new();
+        let out = handle_user("/agents", &mut s, &mut r).unwrap();
+        assert_eq!(out, "no agents configured");
+    }
+
+    #[test]
+    fn resume_without_sessions_says_none() {
+        let (_dir, _g) = tmp();
+        let provider = Script { name: "m".into(), answer: "ok".into() };
+        let mut r = runner(&provider);
+        let mut s = crate::session::Session::new();
+        let out = handle_user("/resume", &mut s, &mut r).unwrap();
+        assert_eq!(out, "no saved sessions to resume");
+    }
+
+    #[test]
+    fn resume_finds_by_prefix() {
+        let (_dir, _g) = tmp();
+        let mut saved = crate::session::Session::new();
+        saved.id = "cafe0000-0000-0000-0000-000000000000".to_string();
+        saved.messages.push(Message::user("hello"));
+        saved.save().unwrap();
+        let provider = Script { name: "m".into(), answer: "ok".into() };
+        let mut r = runner(&provider);
+        let mut s = crate::session::Session::new();
+        let out = handle_user("/resume cafe", &mut s, &mut r).unwrap();
+        assert_eq!(out, "resuming session cafe0000");
+        assert_eq!(
+            crate::invoke::take_resume_session(),
+            Some(saved.id.clone())
+        );
+    }
+
+    #[test]
+    fn resume_unknown_prefix_reports() {
+        let (_dir, _g) = tmp();
+        let provider = Script { name: "m".into(), answer: "ok".into() };
+        let mut r = runner(&provider);
+        let mut s = crate::session::Session::new();
+        let out = handle_user("/resume zzz", &mut s, &mut r).unwrap();
+        assert_eq!(out, "no session matches 'zzz'");
+    }
+
+    #[test]
+    fn sessions_lists_saved() {
+        let (_dir, _g) = tmp();
+        let provider = Script { name: "m".into(), answer: "ok".into() };
+        let mut r = runner(&provider);
+        let mut s = crate::session::Session::new();
+        assert_eq!(handle_user("/sessions", &mut s, &mut r).unwrap(), "no saved sessions");
+        let mut saved = crate::session::Session::new();
+        saved.id = "12345678-0000-0000-0000-000000000000".to_string();
+        saved.save().unwrap();
+        let out = handle_user("/sessions", &mut s, &mut r).unwrap();
+        assert!(out.contains("saved sessions:"), "got: {out}");
+        assert!(out.contains("12345678"), "got: {out}");
+    }
+
+    #[test]
+    fn undo_reverts_latest_operation() {
+        let (dir, _g) = tmp();
+        let path = dir.path().join("f.txt");
+        std::fs::write(&path, "v1").unwrap();
+        let revert = crate::ledger::snapshot(path.to_str().unwrap()).unwrap();
+        crate::ledger::record("write", &json!({"path": path}), "wrote v2", Some(revert)).unwrap();
+        std::fs::write(&path, "v2").unwrap();
+        let provider = Script { name: "m".into(), answer: "ok".into() };
+        let mut r = runner(&provider);
+        let mut s = crate::session::Session::new();
+        let out = handle_user("/undo", &mut s, &mut r).unwrap();
+        assert_eq!(out, "reverted 1 operation(s)");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "v1");
+    }
+
+    #[test]
+    fn audit_shows_ledger() {
+        let (_dir, _g) = tmp();
+        crate::ledger::record("bash", &json!({"command": "echo"}), "ok", None).unwrap();
+        let provider = Script { name: "m".into(), answer: "ok".into() };
+        let mut r = runner(&provider);
+        let mut s = crate::session::Session::new();
+        let out = handle_user("/audit", &mut s, &mut r).unwrap();
+        assert!(out.contains("bash"), "got: {out}");
+    }
+
+    #[test]
+    fn diff_requires_and_compares() {
+        let (_dir, _g) = tmp();
+        let provider = Script { name: "m".into(), answer: "ok".into() };
+        let mut r = runner(&provider);
+        let mut s = crate::session::Session::new();
+        assert_eq!(handle_user("/diff", &mut s, &mut r).unwrap(), "usage: /diff <id1> <id2>");
+        let mut a = crate::session::Session::new();
+        a.id = "aaaa0000-0000-0000-0000-000000000000".to_string();
+        a.created_at = "2026-01-01T00:00:00Z".to_string();
+        a.messages.push(Message::user("first ask"));
+        a.save().unwrap();
+        let mut b = crate::session::Session::new();
+        b.id = "bbbb0000-0000-0000-0000-000000000000".to_string();
+        b.created_at = "2026-06-01T00:00:00Z".to_string();
+        b.messages.push(Message::user("second ask"));
+        b.save().unwrap();
+        let out = handle_user("/diff aaaa bbbb", &mut s, &mut r).unwrap();
+        assert!(out.contains("session diff:"), "got: {out}");
+        assert!(out.contains("asked: first ask"), "got: {out}");
+        assert!(out.contains("asked: second ask"), "got: {out}");
+        let bad = handle_user("/diff aaaa zzzz", &mut s, &mut r).unwrap();
+        assert!(bad.starts_with("error:"), "got: {bad}");
+    }
+
+    #[test]
+    fn memory_empty_shows_none() {
+        let (dir, _g) = tmp();
+        crate::memory::knowledge::set_path(dir.path().join("memory/knowledge.jsonl"));
+        crate::memory::set_path(dir.path().join("memory/episodic.jsonl"));
+        let provider = Script { name: "m".into(), answer: "ok".into() };
+        let mut r = runner(&provider);
+        let mut s = crate::session::Session::new();
+        let out = handle_user("/memory", &mut s, &mut r).unwrap();
+        assert!(out.contains("## knowledge"), "got: {out}");
+        assert!(out.contains("(none)"), "got: {out}");
+        assert!(out.contains("## recent events"), "got: {out}");
+    }
+
+    #[test]
+    fn memory_drop_removes_saved() {
+        let (dir, _g) = tmp();
+        crate::memory::knowledge::set_path(dir.path().join("memory/knowledge.jsonl"));
+        crate::memory::set_path(dir.path().join("memory/episodic.jsonl"));
+        crate::memory::knowledge::save_pair("deploy key", "in vault", "test").unwrap();
+        let provider = Script { name: "m".into(), answer: "ok".into() };
+        let mut r = runner(&provider);
+        let mut s = crate::session::Session::new();
+        let out = handle_user("/memory drop deploy key", &mut s, &mut r).unwrap();
+        assert!(out.contains("dropped knowledge 'deploy key'"), "got: {out}");
+        assert!(crate::memory::knowledge::load().is_empty());
+        let missing = handle_user("/memory drop nothing", &mut s, &mut r).unwrap();
+        assert_eq!(missing, "no knowledge 'nothing'");
+    }
+
+    #[test]
+    fn memory_search_finds_item() {
+        let (dir, _g) = tmp();
+        crate::memory::knowledge::set_path(dir.path().join("memory/knowledge.jsonl"));
+        crate::memory::set_path(dir.path().join("memory/episodic.jsonl"));
+        crate::memory::knowledge::save_pair("router ip", "192.168.1.1", "test").unwrap();
+        let provider = Script { name: "m".into(), answer: "ok".into() };
+        let mut r = runner(&provider);
+        let mut s = crate::session::Session::new();
+        let out = handle_user("/memory search router", &mut s, &mut r).unwrap();
+        assert!(out.contains("## knowledge matches"), "got: {out}");
+        assert!(out.contains("router ip"), "got: {out}");
+        assert!(out.contains("## event matches"), "got: {out}");
+    }
+
+    #[test]
+    fn memory_stale_reports_none_fresh() {
+        let (dir, _g) = tmp();
+        crate::memory::knowledge::set_path(dir.path().join("memory/knowledge.jsonl"));
+        crate::memory::set_path(dir.path().join("memory/episodic.jsonl"));
+        crate::memory::knowledge::save_pair("fresh fact", "x", "test").unwrap();
+        let provider = Script { name: "m".into(), answer: "ok".into() };
+        let mut r = runner(&provider);
+        let mut s = crate::session::Session::new();
+        let out = handle_user("/memory stale 0", &mut s, &mut r).unwrap();
+        assert!(out.contains("no stale knowledge"), "got: {out}");
+    }
+
+    #[test]
+    fn memory_mind_dispatches() {
+        let (_dir, _g) = tmp();
+        let provider = Script { name: "m".into(), answer: "ok".into() };
+        let mut r = runner(&provider);
+        let mut s = crate::session::Session::new();
+        let out = handle_user("/memory mind", &mut s, &mut r).unwrap();
+        assert_eq!(out, "mind consolidation dispatched in the background");
+    }
+
+    #[test]
+    fn init_creates_memory_file() {
+        let (dir, _g) = tmp();
+        let orig = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir.path()).unwrap();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let provider = Script { name: "m".into(), answer: "ok".into() };
+            let mut r = runner(&provider);
+            let mut s = crate::session::Session::new();
+            let out = handle_user("/init", &mut s, &mut r).unwrap();
+            assert_eq!(out, "created ZAKHAR.md");
+            assert!(dir.path().join("ZAKHAR.md").exists());
+            let again = handle_user("/init", &mut s, &mut r).unwrap();
+            assert_eq!(again, "ZAKHAR.md already exists");
+        }));
+        let _ = std::env::set_current_dir(&orig);
+        result.unwrap();
+    }
+
+    #[test]
+    fn custom_command_files_win() {
+        let (dir, _g) = tmp();
+        let orig = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir.path()).unwrap();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            std::fs::create_dir_all(".opencode/commands").unwrap();
+            std::fs::write(".opencode/commands/greet.md", "say hi to the user").unwrap();
+            let provider = Script { name: "m".into(), answer: "ok".into() };
+            let mut r = runner(&provider);
+            let mut s = crate::session::Session::new();
+            let out = handle_user("/greet bob", &mut s, &mut r).unwrap();
+            assert!(out.contains("[slash:greet]"), "got: {out}");
+            assert!(out.contains("say hi to the user"), "got: {out}");
+            assert!(out.contains("--- args: bob"), "got: {out}");
+        }));
+        let _ = std::env::set_current_dir(&orig);
+        result.unwrap();
+    }
+}

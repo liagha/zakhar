@@ -316,4 +316,147 @@ mod tests {
         let names = s.tool_names();
         assert_eq!(names, vec!["read".to_string()]);
     }
+
+    fn tmp() -> (tempfile::TempDir, std::sync::MutexGuard<'static, ()>) {
+        let guard = crate::memory::lock();
+        let dir = tempfile::tempdir().unwrap();
+        crate::paths::set_home(dir.path().join(".zakhar"));
+        (dir, guard)
+    }
+
+    fn disk_session(id: &str, created: &str, messages: Vec<Message>) -> Session {
+        Session {
+            id: id.to_string(),
+            created_at: created.to_string(),
+            messages,
+        }
+    }
+
+    #[test]
+    fn save_and_load_roundtrip() {
+        let (_dir, _g) = tmp();
+        let mut s = Session::new();
+        s.id = "cafe0000-0000-0000-0000-000000000000".to_string();
+        s.messages.push(msg(Role::User, "hello"));
+        s.save().unwrap();
+        assert!(dir().unwrap().join("cafe0000-0000-0000-0000-000000000000.json").exists());
+        let back = Session::load(&s.id).unwrap();
+        assert_eq!(back.id, s.id);
+        assert_eq!(back.messages.len(), 1);
+        assert_eq!(back.first_user(), "hello");
+    }
+
+    #[test]
+    fn load_missing_errors() {
+        let (_dir, _g) = tmp();
+        assert!(Session::load("nope").is_err());
+    }
+
+    #[test]
+    fn first_user_flattens_and_trims() {
+        let mut s = Session::new();
+        s.messages.push(msg(Role::User, "  multi\nline  "));
+        assert_eq!(s.first_user(), "multi line");
+        assert_eq!(Session::new().first_user(), "");
+    }
+
+    #[test]
+    fn last_assistant_skips_blank() {
+        let mut s = Session::new();
+        s.messages.push(msg(Role::Assistant, ""));
+        s.messages.push(msg(Role::Assistant, "  result  "));
+        assert_eq!(s.last_assistant(), "result");
+        assert_eq!(Session::new().last_assistant(), "");
+    }
+
+    #[test]
+    fn list_sorts_newest_and_skips_corrupt() {
+        let (_dir, _g) = tmp();
+        let older = disk_session(
+            "aaaa0000-0000-0000-0000-000000000000",
+            "2026-01-01T00:00:00Z",
+            vec![msg(Role::User, "old")],
+        );
+        older.save().unwrap();
+        let newer = disk_session(
+            "bbbb0000-0000-0000-0000-000000000000",
+            "2026-06-01T00:00:00Z",
+            vec![msg(Role::User, "new")],
+        );
+        newer.save().unwrap();
+        std::fs::write(dir().unwrap().join("junk.json"), "not json").unwrap();
+        std::fs::write(dir().unwrap().join("note.txt"), "no extension match").unwrap();
+        let found = list();
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[0].id, newer.id);
+        assert_eq!(found[1].id, older.id);
+        assert_eq!(found[0].message_count, 1);
+    }
+
+    #[test]
+    fn find_and_last_match_saved_ids() {
+        let (_dir, _g) = tmp();
+        let s = disk_session(
+            "feed0000-0000-0000-0000-000000000000",
+            "2026-01-01T00:00:00Z",
+            Vec::new(),
+        );
+        s.save().unwrap();
+        assert_eq!(find("fee"), Some(s.id.clone()));
+        assert_eq!(find("FEE"), None);
+        assert_eq!(find("zzz"), None);
+        assert_eq!(last(), Some(s.id.clone()));
+    }
+
+    #[test]
+    fn list_formatted_renders_empty_and_rows() {
+        let (_dir, _g) = tmp();
+        assert_eq!(list_formatted(), "no saved sessions");
+        disk_session(
+            "12345678-0000-0000-0000-000000000000",
+            "2026-01-01T00:00:00Z",
+            vec![msg(Role::User, "x")],
+        )
+        .save()
+        .unwrap();
+        let out = list_formatted();
+        assert!(out.contains("saved sessions:"), "got: {out}");
+        assert!(out.contains("12345678"), "got: {out}");
+        assert!(out.contains("(1 messages)"), "got: {out}");
+    }
+
+    #[test]
+    fn summarize_is_newest_first() {
+        {
+            let (_dir, _g) = tmp();
+            disk_session(
+                "aaaa0000-0000-0000-0000-000000000000",
+                "2026-01-01T00:00:00Z",
+                vec![
+                    msg(Role::User, "oldest ask"),
+                    msg(Role::Assistant, "oldest done"),
+                ],
+            )
+            .save()
+            .unwrap();
+            disk_session(
+                "bbbb0000-0000-0000-0000-000000000000",
+                "2026-06-01T00:00:00Z",
+                vec![
+                    msg(Role::User, "newest ask"),
+                    msg(Role::Assistant, "newest done"),
+                ],
+            )
+            .save()
+            .unwrap();
+            let one = summarize(1);
+            assert!(one.contains("newest ask"), "got: {one}");
+            assert!(!one.contains("oldest ask"), "got: {one}");
+            assert!(one.contains("did: newest done"), "got: {one}");
+            let all = summarize(5);
+            assert!(all.contains("oldest ask"), "got: {all}");
+        }
+        let (_d2, _g2) = tmp();
+        assert_eq!(summarize(5), "");
+    }
 }

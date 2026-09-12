@@ -136,4 +136,65 @@ mod tests {
         assert!(rem(Some("daily".to_string())).is_recurring());
         assert!(rem(Some("every hour".to_string())).is_recurring());
     }
+
+    fn tmp() -> (tempfile::TempDir, std::sync::MutexGuard<'static, ()>) {
+        let guard = crate::memory::lock();
+        let dir = tempfile::tempdir().unwrap();
+        crate::paths::set_home(dir.path().join(".zakhar"));
+        (dir, guard)
+    }
+
+    #[test]
+    fn add_persists_and_lists_pending() {
+        let (_dir, _g) = tmp();
+        let r = add("hello".to_string(), "2026-01-01T00:00:00Z".to_string(), None).unwrap();
+        assert_eq!(r.id.len(), 32);
+        assert!(!r.done);
+        let loaded = load();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].message, "hello");
+        assert!(!loaded[0].done);
+        assert_eq!(list_pending().len(), 1);
+    }
+
+    #[test]
+    fn drop_by_prefix_removes_and_saves() {
+        let (_dir, _g) = tmp();
+        let a = add("first".into(), "2026-01-01T00:00:00Z".into(), None).unwrap();
+        let _b = add("second".into(), "2026-01-01T00:00:00Z".into(), None).unwrap();
+        let removed = drop(&a.id[..8]);
+        assert_eq!(removed.unwrap().message, "first");
+        assert_eq!(load().len(), 1);
+        assert!(drop("zzz").is_none());
+        assert_eq!(load().len(), 1);
+    }
+
+    #[test]
+    fn mark_done_hides_from_pending() {
+        let (_dir, _g) = tmp();
+        let r = add("do it".into(), "2026-01-01T00:00:00Z".into(), None).unwrap();
+        mark_done(&r.id);
+        assert!(list_pending().is_empty());
+        assert!(load()[0].done);
+        mark_done("unknown");
+        assert!(load()[0].done);
+    }
+
+    #[test]
+    fn due_and_due_filters_undone_past() {
+        let (_dir, _g) = tmp();
+        let past = add("expired".into(), "2020-01-01T00:00:00Z".into(), None).unwrap();
+        add("future".into(), "2099-01-01T00:00:00Z".into(), None).unwrap();
+        assert_eq!(due_and_due().len(), 1);
+        mark_done(&past.id);
+        assert_eq!(due_and_due().len(), 0);
+    }
+
+    #[test]
+    fn parse_due_accepts_rfc3339_only() {
+        let dt = parse_due("2026-01-01T12:00:00Z").unwrap();
+        assert!(dt.to_rfc3339().starts_with("2026-01-01T12:00:00"));
+        assert!(parse_due("banana").is_none());
+        assert!(parse_due("").is_none());
+    }
 }
