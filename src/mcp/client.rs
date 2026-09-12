@@ -39,7 +39,7 @@ pub fn connect(server_key: &str, cfg: &Server) -> anyhow::Result<Arc<Client>> {
     if let Some(existing) = cell.lock().unwrap().get(server_key) {
         return Ok(existing.clone());
     }
-    let client = Arc::new(spawn(cfg)?);
+    let client = Arc::new(spawn(server_key, cfg)?);
     client.request(
         "initialize",
         json!({
@@ -86,17 +86,22 @@ pub fn connect(server_key: &str, cfg: &Server) -> anyhow::Result<Arc<Client>> {
     Ok(client)
 }
 
-fn spawn(cfg: &Server) -> anyhow::Result<Client> {
+fn spawn(server_key: &str, cfg: &Server) -> anyhow::Result<Client> {
     let mut child = Command::new(&cfg.command)
         .args(&cfg.args)
+        .envs(&cfg.env)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::piped())
         .spawn()?;
     let stdout = child
         .stdout
         .take()
         .ok_or_else(|| anyhow::anyhow!("server has no stdout"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("server has no stderr"))?;
     let stdin = child
         .stdin
         .take()
@@ -132,6 +137,36 @@ fn spawn(cfg: &Server) -> anyhow::Result<Client> {
                                     Err(format!("mcp error {code}: {message}"))
                                 });
                             let _ = tx.send((id, outcome));
+                        }
+                    }
+                }
+            }
+        });
+    let key = server_key.to_string();
+    let _ = std::thread::Builder::new()
+        .name("mcp-log".to_string())
+        .spawn(move || {
+            let log = crate::paths::home()
+                .join("log")
+                .join(format!("mcp-{key}.log"));
+            if let Some(dir) = log.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log);
+            let mut reader = std::io::BufReader::new(stderr);
+            let mut line = String::new();
+            loop {
+                line.clear();
+                match reader.read_line(&mut line) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {
+                        if let Ok(f) = file.as_mut()
+                            && let Err(_) = std::io::Write::write_all(f, line.as_bytes())
+                        {
+                            break;
                         }
                     }
                 }

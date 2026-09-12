@@ -12,7 +12,7 @@ fn path() -> PathBuf {
     if let Some(p) = crate::memory::override_path() {
         return p;
     }
-    PathBuf::from(".zakhar/memory/episodic.jsonl")
+    crate::paths::home().join("memory").join("episodic.jsonl")
 }
 
 fn parent_dir(path: &Path) -> PathBuf {
@@ -143,7 +143,7 @@ pub fn compact() -> anyhow::Result<Vec<Event>> {
     writeln!(notes_file, "{out}")?;
 
     let _ = dispatch_compact(&archive);
-    let _ = super::mind::dispatch(&std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let _ = super::mind::dispatch(&crate::paths::home());
 
     Ok(chunk)
 }
@@ -152,8 +152,7 @@ pub fn dispatch_compact(archive: &Path) -> anyhow::Result<()> {
     if std::env::var("ZAKHAR_NO_COMPACT").is_ok() {
         return Ok(());
     }
-    let root = std::env::current_dir()?;
-    crate::memory::jobs::enqueue("compact", &root, Some(archive))
+    crate::memory::jobs::enqueue("compact", &crate::paths::home(), Some(archive))
 }
 
 pub fn read_archive(archive: &Path) -> Vec<Event> {
@@ -215,7 +214,7 @@ pub async fn summarize_compaction(
 
     let summary = summary.trim().to_string();
 
-    let notes = root.join(".zakhar").join("NOTES.md");
+    let notes = root.join("NOTES.md");
     let stamp = Utc::now().format("%Y-%m-%d %H:%M");
     let entry = format!("\n## Summary @ {stamp} ({} events)\n{}\n", events.len(), summary);
     let mut notes_file = std::fs::OpenOptions::new()

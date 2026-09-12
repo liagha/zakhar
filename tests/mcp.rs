@@ -15,6 +15,7 @@ fn test_cfg() -> Config {
         Server {
             command: env!("CARGO_BIN_EXE_zakhar").to_string(),
             args: vec!["mcp".to_string()],
+            env: HashMap::new(),
         },
     );
     Config {

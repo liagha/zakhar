@@ -53,6 +53,7 @@ glob = "0.3"
 libc = "0.2"
 urlencoding = "2"
 base64 = "0.22"
+rusqlite = { version = "0.40", features = ["bundled"] }
 
 [dev-dependencies]
 assert_cmd = "2"

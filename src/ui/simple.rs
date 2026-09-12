@@ -56,9 +56,9 @@ impl<'a> Simple<'a> {
         let arrow = self.pal.tool_result.on("▾");
         let name_s = self.pal.tool_result.on(name);
         if byte_len > 500 {
-            println!("{} {} ({} B): {} …", arrow, name_s, byte_len, preview);
+            println!("  {} {} ({} B): {} …", arrow, name_s, byte_len, preview);
         } else {
-            println!("{} {}: {}", arrow, name_s, preview);
+            println!("  {} {}: {}", arrow, name_s, preview);
         }
         flush();
     }

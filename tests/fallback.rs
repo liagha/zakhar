@@ -19,6 +19,7 @@ fn cfg() -> Config {
             default_model: "glm-4.7-flash".to_string(),
             models: vec!["glm-4.7-flash".to_string(), "glm-4.5-flash".to_string()],
             user_agent: String::new(),
+            headers: HashMap::new(),
         },
     );
     providers.insert(
@@ -30,6 +31,7 @@ fn cfg() -> Config {
             default_model: "big-pickle".to_string(),
             models: vec!["big-pickle".to_string()],
             user_agent: String::new(),
+            headers: HashMap::new(),
         },
     );
 

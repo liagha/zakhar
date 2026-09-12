@@ -5,8 +5,14 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::{Mutex, OnceLock};
 
-const FILE: &str = ".zakhar/ledger.jsonl";
-const BACK_DIR: &str = ".zakhar/ledger/back";
+fn file() -> std::path::PathBuf {
+    crate::paths::home().join("ledger.jsonl")
+}
+
+fn back_dir() -> std::path::PathBuf {
+    crate::paths::home().join("ledger/back")
+}
+
 const CAP: usize = 2000;
 const TRIM: usize = 500;
 
@@ -55,11 +61,11 @@ pub fn snapshot(path: &str) -> Option<Revert> {
 
 pub fn record(tool: &str, args: &serde_json::Value, outcome: &str, revert: Option<Revert>) -> anyhow::Result<()> {
     let _g = lock();
-    std::fs::create_dir_all(".zakhar")?;
+    std::fs::create_dir_all(crate::paths::home())?;
     let id = crate::memory::knowledge::uid();
     if let Some(r) = &revert {
-        let dir = std::path::Path::new(BACK_DIR);
-        std::fs::create_dir_all(dir)?;
+        let dir = back_dir();
+        std::fs::create_dir_all(&dir)?;
         let bytes = B64.decode(&r.old_b64)?;
         std::fs::write(dir.join(format!("{id}.bak")), bytes)?;
     }
@@ -82,7 +88,7 @@ pub fn record(tool: &str, args: &serde_json::Value, outcome: &str, revert: Optio
 }
 
 pub fn read() -> Vec<Entry> {
-    std::fs::read_to_string(FILE)
+    std::fs::read_to_string(file())
         .ok()
         .map(|t| {
             t.lines()
@@ -145,7 +151,7 @@ fn write_all(entries: &[Entry]) -> anyhow::Result<()> {
         out.push_str(&serde_json::to_string(e)?);
         out.push('\n');
     }
-    let path = std::path::Path::new(FILE);
+    let path = file();
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -162,6 +168,7 @@ mod tests {
     fn tmp_root() -> (tempfile::TempDir, std::sync::MutexGuard<'static, ()>) {
         let guard = crate::memory::lock();
         let dir = tempfile::tempdir().unwrap();
+        crate::paths::set_home(dir.path().join(".zakhar"));
         (dir, guard)
     }
 

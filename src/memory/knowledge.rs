@@ -4,7 +4,6 @@ use std::sync::{Mutex, OnceLock};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-const FILE: &str = ".zakhar/memory/knowledge.jsonl";
 const SALIENCE_HALF_DAYS: f64 = 30.0;
 const WARM_HALF_DAYS: f64 = 7.0;
 const SALIENCE_MAX: f64 = 1.0;
@@ -27,11 +26,11 @@ fn path() -> PathBuf {
     {
         return p;
     }
-    PathBuf::from(FILE)
+    crate::paths::home().join("memory").join("knowledge.jsonl")
 }
 
 pub fn store_path(root: &Path) -> PathBuf {
-    root.join(".zakhar").join("memory").join("knowledge.jsonl")
+    root.join("memory").join("knowledge.jsonl")
 }
 
 pub fn uid() -> String {

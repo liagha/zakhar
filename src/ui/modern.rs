@@ -97,9 +97,9 @@ impl<'a> Modern<'a> {
         let name_s = self.pal.tool_result.on(name);
         let preview_s = self.pal.tool_result.on(preview);
         if byte_len > 500 {
-            println!("{} {} ({} B): {} …", arrow, name_s, byte_len, preview_s);
+            println!("  {} {} ({} B): {} …", arrow, name_s, byte_len, preview_s);
         } else {
-            println!("{} {}: {}", arrow, name_s, preview_s);
+            println!("  {} {}: {}", arrow, name_s, preview_s);
         }
         flush();
     }
@@ -158,7 +158,7 @@ impl<'a> Modern<'a> {
             '?' => "?",
             _ => "?",
         };
-        print!("\r\x1b[2K· {msg} [{label}]");
+        print!("\r\x1b[2K· {msg} [{label}]\n");
         flush();
         ch.to_ascii_lowercase()
     }

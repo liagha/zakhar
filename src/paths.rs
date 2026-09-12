@@ -1,6 +1,20 @@
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
+
+static OVERRIDE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+
+#[cfg(test)]
+pub(crate) fn set_home(p: PathBuf) {
+    let cell = OVERRIDE.get_or_init(|| Mutex::new(None));
+    *cell.lock().unwrap() = Some(p);
+}
 
 pub fn home() -> PathBuf {
+    if let Some(over) = OVERRIDE.get()
+        && let Some(p) = over.lock().unwrap().clone()
+    {
+        return p;
+    }
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".zakhar")

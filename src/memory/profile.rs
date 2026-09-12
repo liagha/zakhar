@@ -1,9 +1,11 @@
+use colored::Colorize;
+
 pub fn load() -> Option<String> {
     let p = crate::paths::profile_path();
     if let Ok(text) = std::fs::read_to_string(&p)
         && !text.trim().is_empty()
     {
-        println!("[memory] loaded profile from {}", p.display());
+        println!("{}", format!("[memory] loaded profile from {}", p.display()).dimmed());
         return Some(text);
     }
     None

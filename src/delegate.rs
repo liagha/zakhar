@@ -444,7 +444,7 @@ pub async fn run(
     format!("{prefix} ✗ max turns ({MAX_TURNS}) reached without final answer")
 }
 
-fn compact_args(args: &Value) -> String {
+pub(crate) fn compact_args(args: &Value) -> String {
     match args {
         Value::Object(map) => {
             let parts: Vec<String> = map

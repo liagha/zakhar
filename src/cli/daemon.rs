@@ -94,7 +94,7 @@ async fn run_job(job: Job) {
         Ok(s) => s,
         Err(e) => format!("daemon: {:?} job failed for {}: {e}", job.kind, job.root.display()),
     };
-    log(&job.root.join(".zakhar/memory/compaction.log"), &line);
+    log(&job.root.join("memory").join("compaction.log"), &line);
 }
 
 async fn run_one(job: &Job) -> anyhow::Result<String> {

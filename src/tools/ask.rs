@@ -15,7 +15,7 @@ struct Item {
 }
 
 fn todo_path() -> PathBuf {
-    PathBuf::from(".zakhar/todo.json")
+    crate::paths::home().join("todo.json")
 }
 
 fn load_todos() -> Vec<Item> {

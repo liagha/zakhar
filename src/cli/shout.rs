@@ -94,7 +94,7 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
     if let Err(e) = crate::memory::episodic::append("phrase", &text) {
         println!("[memory] failed to log event: {e}");
     }
-    let _ = crate::memory::mind::dispatch(&std::env::current_dir().unwrap_or_default());
+    let _ = crate::memory::mind::dispatch(&crate::paths::home());
 
     if let Some(seed) = crate::invoke::chat_message() {
         super::chat(None, None, None, true, false, false, false, seed).await?;
@@ -174,6 +174,14 @@ async fn run_tool_loop(
             full,
             Some(tool_calls.clone()),
         ));
+
+        let summary = tool_calls
+            .iter()
+            .map(|tc| format!("{}({})", tc.name, crate::delegate::compact_args(&tc.arguments)))
+            .collect::<Vec<_>>()
+            .join(" · ");
+        ui.tool_call(&summary);
+        ui.end();
 
         let mut outputs: HashMap<String, String> = HashMap::new();
         let mut delegate_futures: Vec<std::pin::Pin<Box<dyn std::future::Future<Output = String>>>> =
@@ -258,16 +266,21 @@ async fn run_tool_loop(
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
                 let out = slash::handle_ai(cmd, args, session, runner);
+                let preview = out.lines().next().unwrap_or("").chars().take(80).collect::<String>();
+                ui.tool_result(&format!("slash {cmd}"), &preview, out.len());
                 hooks::run_post(&tc.name, &tc.arguments, &out);
                 outputs.insert(tc.id.clone(), out);
             } else if tc.name == "ask" {
                 ui.end();
                 let out = inv.exec("ask", &tc.arguments);
+                let preview: String = out.chars().take(500).collect();
+                ui.tool_result("ask", &preview, out.len());
                 hooks::run_post(&tc.name, &tc.arguments, &out);
                 outputs.insert(tc.id.clone(), out);
             } else {
-                ui.status(format!("↷ {}", tc.name).as_str());
                 let out = inv.exec(&tc.name, &tc.arguments);
+                let preview: String = out.chars().take(500).collect();
+                ui.tool_result(&tc.name, &preview, out.len());
                 hooks::run_post(&tc.name, &tc.arguments, &out);
                 let skill_msg = if tc.name == "skill"
                     && let Some(name) = tc.arguments.get("name").and_then(|v| v.as_str())
@@ -289,11 +302,14 @@ async fn run_tool_loop(
         }
 
         if !delegate_futures.is_empty() {
-            ui.status(format!("↻ {} sub-agent(s) …", delegate_futures.len()).as_str());
+            ui.note(
+                format!("→ running {} delegate/handoff(s) in parallel …", delegate_futures.len()).as_str(),
+            );
             let results = futures::future::join_all(delegate_futures).await;
             for ((id, kind), res) in delegate_ids.into_iter().zip(delegate_kinds).zip(results) {
+                let preview: String = res.chars().take(500).collect();
+                ui.tool_result(&kind, &preview, res.len());
                 outputs.insert(id, res);
-                ui.status(format!("↻ {kind} done").as_str());
             }
         }
 
@@ -303,8 +319,6 @@ async fn run_tool_loop(
                 .unwrap_or_else(|| "error: missing output".to_string());
             runner.push(crate::types::Message::tool(tc.id.clone(), out));
         }
-
-        ui.status("↻ feeding results back …");
     }
 }
 

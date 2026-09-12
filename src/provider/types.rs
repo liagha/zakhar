@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::types::Role;
@@ -16,10 +18,12 @@ pub struct Config {
     pub models: Vec<String>,
     #[serde(default = "default_user_agent")]
     pub user_agent: String,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub headers: HashMap<String, String>,
 }
 
 fn default_user_agent() -> String {
-    format!("zakhar/{}", env!("CARGO_PKG_VERSION"))
+    "opencode/1.18.30 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14".to_string()
 }
 
 fn default_api_type() -> String {

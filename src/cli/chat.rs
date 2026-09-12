@@ -286,7 +286,7 @@ pub async fn chat(
                 if !full.trim().is_empty()
                     && let Err(e) = crate::memory::episodic::append("chat", &full)
                 {
-                    println!("[memory] failed to log event: {e}");
+                    ui.note(&format!("[memory] failed to log event: {e}"));
                 }
                 runner.push(crate::types::Message::assistant(full.clone(), None));
                 session
@@ -537,7 +537,7 @@ pub async fn chat(
         ));
         ui.ok("turn complete");
     }
-    let _ = crate::memory::mind::dispatch(&std::env::current_dir().unwrap_or_default());
+    let _ = crate::memory::mind::dispatch(&crate::paths::home());
     Ok(())
 }
 

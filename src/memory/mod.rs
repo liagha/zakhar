@@ -8,6 +8,8 @@ pub mod recall;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
+use colored::Colorize;
+
 static OVERRIDE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
 
 #[cfg(test)]
@@ -70,7 +72,7 @@ pub fn load_blocks() -> Vec<(String, String)> {
             && !text.trim().is_empty()
         {
             parts.push(format!("--- {name} ---\n{text}"));
-            println!("[memory] loaded {name} ({} bytes)", text.len());
+            println!("{}", format!("[memory] loaded {name} ({} bytes)", text.len()).dimmed());
         }
     }
     let p = crate::paths::config_dir().join("memory.md");
@@ -79,7 +81,7 @@ pub fn load_blocks() -> Vec<(String, String)> {
         && !text.trim().is_empty()
     {
         parts.push(format!("--- config/memory.md ---\n{text}"));
-        println!("[memory] loaded {} ({} bytes)", p.display(), text.len());
+        println!("{}", format!("[memory] loaded {} ({} bytes)", p.display(), text.len()).dimmed());
     }
     if !parts.is_empty() {
         blocks.push(("memory".to_string(), parts.join("\n\n")));

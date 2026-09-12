@@ -1,6 +1,7 @@
 //! OpenAI-compatible chat provider: SSE stream decoding, bounded retries
 //! with Retry-After support, transport timeouts, and strict chunk parsing.
 
+use std::collections::HashMap;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -8,7 +9,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::stream::Stream;
 use futures::StreamExt;
-use reqwest::header::{HeaderMap, HeaderValue, RETRY_AFTER, USER_AGENT};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue, RETRY_AFTER, USER_AGENT};
 use reqwest::Client;
 use serde_json::json;
 
@@ -19,6 +20,7 @@ use crate::types::ChatRequest;
 const CONNECT_TIMEOUT: u64 = 10;
 const READ_TIMEOUT: u64 = 120;
 const MAX_RETRY_DELAY: u64 = 30;
+const SESSION: &str = "{opencode:session}";
 
 pub struct OpenAI {
     id: String,
@@ -28,6 +30,7 @@ pub struct OpenAI {
     models: Vec<String>,
     client: Client,
     max_retries: u32,
+    headers: HashMap<String, String>,
 }
 
 impl OpenAI {
@@ -52,12 +55,46 @@ impl OpenAI {
             models: cfg.models.clone(),
             client,
             max_retries: 3,
+            headers: cfg.headers.clone(),
         }
     }
 
     fn endpoint(&self) -> String {
         format!("{}/chat/completions", self.base_url)
     }
+
+    fn resolved(&self) -> HeaderMap {
+        let mut map = HeaderMap::with_capacity(self.headers.len());
+        for (name, value) in &self.headers {
+            let value = if value == SESSION {
+                newest_session().unwrap_or_else(|| value.clone())
+            } else {
+                value.clone()
+            };
+            if let (Ok(name), Ok(value)) = (
+                HeaderName::from_bytes(name.as_bytes()),
+                HeaderValue::from_str(&value),
+            ) {
+                map.insert(name, value);
+            }
+        }
+        map
+    }
+}
+
+fn newest_session() -> Option<String> {
+    let db = dirs::data_local_dir()?.join("opencode").join("opencode.db");
+    let conn = rusqlite::Connection::open_with_flags(
+        db,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .ok()?;
+    conn.query_row(
+        "SELECT id FROM session ORDER BY time_updated DESC LIMIT 1",
+        [],
+        |row| row.get(0),
+    )
+    .ok()
 }
 
 #[async_trait]
@@ -82,7 +119,11 @@ impl Provider for OpenAI {
 
         let mut last_err = None;
         for attempt in 0..=self.max_retries {
-            let mut builder = self.client.post(self.endpoint()).json(&body);
+            let mut builder = self
+                .client
+                .post(self.endpoint())
+                .headers(self.resolved())
+                .json(&body);
             if !self.api_key.is_empty() {
                 builder = builder.bearer_auth(&self.api_key);
             }

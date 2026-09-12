@@ -268,7 +268,7 @@ fn apply(root: &Path, events: &[episodic::Event], store: &[Item], plan: &Plan) -
         plan.journal.trim(),
         stats_added = stats.added
     );
-    let notes = root.join(".zakhar").join("NOTES.md");
+    let notes = root.join("NOTES.md");
     if let Some(dir) = notes.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -354,7 +354,7 @@ fn parse_json(raw: &str) -> anyhow::Result<serde_json::Value> {
 }
 
 fn new_events(root: &Path, since: &str) -> (Vec<episodic::Event>, String) {
-    let events = episodic::read_events(&root.join(".zakhar").join("memory").join("episodic.jsonl"));
+    let events = episodic::read_events(&root.join("memory").join("episodic.jsonl"));
     let mut fresh: Vec<episodic::Event> = if since.is_empty() {
         events
     } else {
@@ -372,7 +372,7 @@ fn new_events(root: &Path, since: &str) -> (Vec<episodic::Event>, String) {
 }
 
 fn marker_path(root: &Path) -> PathBuf {
-    root.join(".zakhar").join("memory").join("mind.json")
+    root.join("memory").join("mind.json")
 }
 
 fn load_marker(root: &Path) -> Marker {
@@ -406,7 +406,7 @@ fn now() -> String {
 }
 
 fn log(root: &Path, line: &str) -> anyhow::Result<()> {
-    let path = root.join(".zakhar").join("memory").join("mind.log");
+    let path = root.join("memory").join("mind.log");
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -444,7 +444,7 @@ mod tests {
     fn new_events_respects_marker() {
         let (dir, _g) = temp_root();
         let root = dir.keep();
-        let p = root.join(".zakhar/memory/episodic.jsonl");
+        let p = root.join("memory/episodic.jsonl");
         std::fs::create_dir_all(p.parent().unwrap()).unwrap();
         let mut file = std::fs::File::create(&p).unwrap();
         for e in [event(1), event(2), event(3)] {
@@ -514,7 +514,7 @@ mod tests {
         let (dir, _g) = temp_root();
         let root = dir.keep();
         drop(_g);
-        let events_p = root.join(".zakhar/memory/episodic.jsonl");
+        let events_p = root.join("memory/episodic.jsonl");
         std::fs::create_dir_all(events_p.parent().unwrap()).unwrap();
         let events = [
             "2026-09-01T10:00:00Z|chat|decided to rewrite the auth module in Rust instead of typescript",
@@ -548,7 +548,7 @@ mod tests {
         assert!(!marker.in_flight, "marker released after success");
         assert_eq!(marker.last_ts, "2026-09-02T10:00:00Z", "marker advanced to newest event");
         assert!(added_kinds.contains(&"open_loop"), "open loop captured");
-        let notes = std::fs::read_to_string(root.join(".zakhar/NOTES.md")).unwrap_or_default();
+        let notes = std::fs::read_to_string(root.join("NOTES.md")).unwrap_or_default();
         assert!(notes.contains("## Mind @"), "journal entry appended");
 
         let second = super::run(&root, &provider, model).await;

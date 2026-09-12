@@ -258,7 +258,7 @@ fn memory(args: &str) -> String {
             }
         }
         "mind" => {
-            match crate::memory::mind::dispatch(&std::env::current_dir().unwrap_or_default()) {
+            match crate::memory::mind::dispatch(&crate::paths::home()) {
                 Ok(_) => out.push_str("mind consolidation dispatched in the background"),
                 Err(e) => out.push_str(&format!("error: {e}")),
             }

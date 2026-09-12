@@ -17,6 +17,7 @@ fn cfg() -> Config {
                 "glm-4.6v-flash".to_string(),
             ],
             user_agent: String::new(),
+            headers: HashMap::new(),
         },
     );
 
