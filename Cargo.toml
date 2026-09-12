@@ -24,7 +24,7 @@ default = []
 jni = ["dep:jni"]
 
 [dependencies]
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt", "macros", "time"] }
 clap = { version = "4", features = ["derive", "env"] }
 clap_complete = "4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls", "blocking", "gzip", "brotli"] }

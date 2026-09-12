@@ -83,6 +83,7 @@ pub async fn chat(
             ui.note(&format!("mcp: {}", mounted.join(", ")));
         }
     }
+    let invoke = invoke.map(std::sync::Arc::new);
 
     let mut session = Session::new();
     let mut runner = Runner::new(p, model.clone(), agent_cfg);
@@ -454,26 +455,34 @@ pub async fn chat(
 
             if !open.is_empty() {
                 ui.note(format!("⇉ running {} read-only tool(s) in parallel", open.len()).as_str());
-                let results: Vec<String> = tokio::task::block_in_place(|| {
-                    std::thread::scope(|s| {
-                        let handles: Vec<_> = open
-                            .iter()
-                            .map(|tc| {
-                                let name = tc.name.clone();
-                                let args = tc.arguments.clone();
-                                s.spawn(move || inv.exec(&name, &args))
-                            })
-                            .collect();
-                        handles
-                            .into_iter()
-                            .map(|handle| {
-                                handle.join().unwrap_or_else(|_| {
-                                    "error: parallel tool panicked".to_string()
+                let results: Vec<String> = {
+                    let inv = std::sync::Arc::clone(inv);
+                    let jobs: Vec<_> = open
+                        .iter()
+                        .map(|tc| (tc.name.clone(), tc.arguments.clone()))
+                        .collect();
+                    tokio::task::spawn_blocking(move || {
+                        std::thread::scope(|s| {
+                            let handles: Vec<_> = jobs
+                                .iter()
+                                .map(|(name, args)| {
+                                    let inv = std::sync::Arc::clone(&inv);
+                                    s.spawn(move || inv.exec(name, args))
                                 })
-                            })
-                            .collect()
+                                .collect();
+                            handles
+                                .into_iter()
+                                .map(|handle| {
+                                    handle.join().unwrap_or_else(|_| {
+                                        "error: parallel tool panicked".to_string()
+                                    })
+                                })
+                                .collect()
+                        })
                     })
-                });
+                    .await
+                    .unwrap_or_else(|_| vec!["error: parallel tool failed".to_string()])
+                };
                 for (tc, res) in open.iter().zip(results) {
                     let preview: String = res.chars().take(500).collect();
                     ui.tool_result(&tc.name, &preview, res.len());
