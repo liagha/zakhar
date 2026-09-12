@@ -81,7 +81,10 @@ impl<'a> Simple<'a> {
     pub fn confirm(&mut self, msg: &str) -> char {
         print!("· {msg} [y/n/a] ");
         flush();
-        let ch = crate::term::read_key();
+        let mut ch = crate::term::read_key();
+        if ch == '\x1b' {
+            ch = 'n';
+        }
         let label = match ch {
             'y' | 'Y' => "yes",
             'n' | 'N' => "no",

@@ -150,7 +150,10 @@ impl<'a> Modern<'a> {
         self.clear_status();
         print!("\r\x1b[2K· {msg} [y/n/a] ");
         flush();
-        let ch = crate::term::read_key();
+        let mut ch = crate::term::read_key();
+        if ch == '\x1b' {
+            ch = 'n';
+        }
         let label = match ch {
             'y' | 'Y' => "yes",
             'n' | 'N' => "no",

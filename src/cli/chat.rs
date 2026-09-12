@@ -140,9 +140,9 @@ pub async fn chat(
     }
 
     if plan_mode {
-        ui.note(format!("zakhar [{provider_id}/{model}] plan ⚑  ctrl+d to exit").as_str());
+        ui.note(format!("zakhar [{provider_id}/{model}] plan ⚑  esc to stop · ctrl+d to exit").as_str());
     } else {
-        ui.note(format!("zakhar [{provider_id}/{model}]  ctrl+d to exit").as_str());
+        ui.note(format!("zakhar [{provider_id}/{model}]  esc to stop · ctrl+d to exit").as_str());
     }
 
     let mut allow_all = false;
@@ -192,6 +192,7 @@ pub async fn chat(
 
         let turn_start = std::time::Instant::now();
         let mut tool_count = 0usize;
+        let mut stopped = false;
 
         let mut attempts = 0u32;
         loop {
@@ -208,6 +209,7 @@ pub async fn chat(
                     continue;
                 }
             };
+            let watch = crate::term::Interrupt::armed();
             let mut full = String::new();
             let mut saw_reasoning = false;
             let mut had_reasoning = false;
@@ -216,6 +218,9 @@ pub async fn chat(
             let mut failed: Option<anyhow::Error> = None;
 
             while let Some(event) = stream.next().await {
+                if watch.is_set() {
+                    break;
+                }
                 let event = match event {
                     Ok(ev) => ev,
                     Err(e) => {
@@ -252,6 +257,13 @@ pub async fn chat(
                     }
                     _ => {}
                 }
+            }
+            let cancelled = watch.is_set();
+            drop(watch);
+            if cancelled {
+                stopped = true;
+                ui.note("⏹ stopped by esc");
+                break;
             }
             if let Some(e) = failed {
                 ui.err(format!("stream interrupted ({attempts}/{STREAM_ATTEMPTS}): {e}").as_str());
@@ -542,9 +554,10 @@ pub async fn chat(
         session.save()?;
         let secs = turn_start.elapsed().as_secs_f64();
         ui.summary(&format!(
-            "done · {secs:.1}s · {tool_count} tool(s) · {provider_id}/{model}"
+            "{} · {secs:.1}s · {tool_count} tool(s) · {provider_id}/{model}",
+            if stopped { "stopped" } else { "done" }
         ));
-        ui.ok("turn complete");
+        ui.ok(if stopped { "turn cancelled" } else { "turn complete" });
     }
     let _ = crate::memory::mind::dispatch(&crate::paths::home());
     Ok(())
