@@ -18,6 +18,29 @@ use crate::types::ToolCall;
 use crate::ui::Ui;
 
 const STREAM_ATTEMPTS: u32 = 3;
+/// When resuming, only the tail of the prior conversation is fed to the model
+/// so a long session stays inside the context window. The full history is kept
+/// on disk and still saved on exit.
+const RESUME_TAIL: usize = 40;
+
+fn load_resumable(id: &str) -> Option<Session> {
+    let full = crate::session::find(id)?;
+    Session::load(&full).ok()
+}
+
+fn push_resumed(session: &Session, runner: &mut Runner<'_>, ui: &mut Ui<'_>) {
+    runner.messages_mut().retain(|m| m.role == crate::types::Role::System);
+    let tail = session.messages.iter().rev().take(RESUME_TAIL).cloned().collect::<Vec<_>>();
+    for msg in tail.into_iter().rev() {
+        runner.push(msg);
+    }
+    ui.note(format!(
+        "↩ resumed session {} ({} messages, {} in context)",
+        &session.id[..8],
+        session.messages.len(),
+        session.messages.len().min(RESUME_TAIL)
+    ).as_str());
+}
 
 #[allow(clippy::too_many_arguments)]
 pub async fn chat(
@@ -28,6 +51,7 @@ pub async fn chat(
     auto_approve: bool,
     plan_mode: bool,
     simple: bool,
+    resume: Option<String>,
     seed: String,
 ) -> anyhow::Result<()> {
     let cfg = Config::load()?;
@@ -86,6 +110,26 @@ pub async fn chat(
     let invoke = invoke.map(std::sync::Arc::new);
 
     let mut session = Session::new();
+    let mut resumed = false;
+
+    match resume.as_deref().filter(|id| !id.trim().is_empty()) {
+        Some(id) => {
+            session = match load_resumable(id) {
+                Some(loaded) => loaded,
+                None => return Err(anyhow::anyhow!("no session matches '{id}'")),
+            };
+            resumed = true;
+        }
+        // `--resume` with no id means the newest session.
+        None if resume.is_some() => {
+            if let Some(loaded) = crate::session::last().and_then(|id| Session::load(&id).ok()) {
+                session = loaded;
+                resumed = true;
+            }
+        }
+        None => {}
+    }
+
     let mut runner = Runner::new(p, model.clone(), agent_cfg);
 
     for (label, text) in crate::memory::load_blocks() {
@@ -135,8 +179,12 @@ pub async fn chat(
         runner.set_tools(tools);
     }
 
-    for msg in &session.messages {
-        runner.push(msg.clone());
+    if resumed {
+        push_resumed(&session, &mut runner, &mut ui);
+    } else {
+        for msg in &session.messages {
+            runner.push(msg.clone());
+        }
     }
 
     if plan_mode {
@@ -153,10 +201,16 @@ pub async fn chat(
     };
     let mut line = String::new();
     loop {
-        ui.prompt();
         let text = if !pending.is_empty() {
             pending.remove(0)
+        } else if crate::readline::available() {
+            ui.clear_line();
+            match crate::readline::readline("> ") {
+                Some(t) => t,
+                None => break,
+            }
         } else {
+            ui.prompt();
             line.clear();
             let read = std::io::stdin().read_line(&mut line)?;
             if read == 0 {
@@ -174,11 +228,7 @@ pub async fn chat(
                 match Session::load(&resume_id) {
                     Ok(loaded) => {
                         session = loaded;
-                        runner.messages_mut().retain(|m| m.role == crate::types::Role::System);
-                        for msg in &session.messages {
-                            runner.push(msg.clone());
-                        }
-                        ui.note(format!("↩ resumed session {} ({} messages)", &resume_id[..8], session.messages.len()).as_str());
+                        push_resumed(&session, &mut runner, &mut ui);
                     }
                     Err(e) => ui.err(format!("failed to resume: {e}").as_str()),
                 }
@@ -201,11 +251,13 @@ pub async fn chat(
                 return Err(anyhow::anyhow!("stream failed after {STREAM_ATTEMPTS} attempts"));
             }
             attempts += 1;
-            ui.status("…");
+            if attempts == 1 {
+                ui.status("…");
+            }
             let mut stream = match runner.stream().await {
                 Ok(s) => s,
                 Err(e) => {
-                    ui.err(format!("stream start failed ({attempts}/{STREAM_ATTEMPTS}): {e}").as_str());
+                    ui.status(&format!("↻ retrying stream ({attempts}/{STREAM_ATTEMPTS}): {}", one_line(&format!("{e:#}"))));
                     continue;
                 }
             };
@@ -266,7 +318,7 @@ pub async fn chat(
                 break;
             }
             if let Some(e) = failed {
-                ui.err(format!("stream interrupted ({attempts}/{STREAM_ATTEMPTS}): {e}").as_str());
+                ui.status(&format!("↻ retrying stream ({attempts}/{STREAM_ATTEMPTS}): {}", one_line(&format!("{e:#}"))));
                 continue;
             }
             attempts = 0;
@@ -441,6 +493,22 @@ pub async fn chat(
                     ui.tool_result("ask", &preview, out.len());
                     hooks::run_post(&tc.name, &tc.arguments, &out);
                     outputs.insert(tc.id.clone(), out);
+                } else if is_action(&tc.name) {
+                    let before = action_before(&tc.name, &tc.arguments);
+                    let uargs = compact_args(&tc.arguments);
+                    ui.action_call(&tc.name, &uargs);
+                    let out = inv.exec(&tc.name, &tc.arguments);
+                    let preview: String = out.chars().take(500).collect();
+                    ui.action_result(&tc.name, &preview, out.len());
+                    if let Some((path, old)) = before {
+                        let new = std::fs::read_to_string(&path).unwrap_or_default();
+                        let d = crate::diff::diff(&old, &new, &path);
+                        if !d.is_empty() {
+                            ui.diff_block(&d);
+                        }
+                    }
+                    hooks::run_post(&tc.name, &tc.arguments, &out);
+                    outputs.insert(tc.id.clone(), out);
                 } else {
                     let out = inv.exec(&tc.name, &tc.arguments);
                     let preview: String = out.chars().take(500).collect();
@@ -541,11 +609,7 @@ pub async fn chat(
                 match Session::load(&resume_id) {
                     Ok(loaded) => {
                         session = loaded;
-                        runner.messages_mut().retain(|m| m.role == crate::types::Role::System);
-                        for msg in &session.messages {
-                            runner.push(msg.clone());
-                        }
-                        ui.note(format!("↩ resumed session {} ({} messages)", &resume_id[..8], session.messages.len()).as_str());
+                        push_resumed(&session, &mut runner, &mut ui);
                     }
                     Err(e) => ui.err(format!("failed to resume: {e}").as_str()),
                 }
@@ -571,7 +635,9 @@ fn compact_args(args: &serde_json::Value) -> String {
                 .map(|(k, v)| {
                     let val = match v {
                         serde_json::Value::String(s) => {
-                            if s.len() > 40 {
+                            if k == "command" {
+                                compact_command(s)
+                            } else if s.len() > 40 {
                                 format!("\"{}...\"", &s[..37])
                             } else {
                                 format!("\"{s}\"")
@@ -588,9 +654,73 @@ fn compact_args(args: &serde_json::Value) -> String {
     }
 }
 
+fn compact_command(command: &str) -> String {
+    let trimmed = command.trim();
+    if trimmed.is_empty() {
+        return "".to_string();
+    }
+    let last = trimmed
+        .rsplit("&&")
+        .next()
+        .unwrap_or(trimmed)
+        .trim()
+        .trim_start_matches("cd ")
+        .trim();
+    if last.is_empty() {
+        let short: String = trimmed.chars().take(60).collect();
+        format!("\"{short}\"")
+    } else {
+        let short: String = last.chars().take(60).collect();
+        let more = if last != short { "…" } else { "" };
+        format!("\"{short}{more}\"")
+    }
+}
+
+fn one_line(text: &str) -> String {
+    let mut out = String::new();
+    let mut saw_esc = false;
+    for c in text.chars() {
+        if c == '\x1b' {
+            saw_esc = true;
+        }
+        if saw_esc {
+            if c.is_ascii_alphabetic() {
+                saw_esc = false;
+            }
+            continue;
+        }
+        if c == '\n' || c == '\r' {
+            out.push(' ');
+        } else if !c.is_control() {
+            out.push(c);
+        }
+    }
+    let collapsed: String = out.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut chars = collapsed.chars();
+    let head: String = chars.by_ref().take(80).collect();
+    if chars.next().is_some() {
+        format!("{head}…")
+    } else {
+        head
+    }
+}
+
+fn is_action(name: &str) -> bool {
+    matches!(name, "write" | "edit" | "bash" | "send_file" | "send_album" | "ban_user" | "unban_user" | "create_group" | "create_channel" | "delete_message" | "delete_messages_bulk" | "delete_chat_history" | "set_default_chat_permissions" | "edit_chat_title" | "edit_chat_photo" | "edit_chat_about" | "promote_admin" | "demote_admin" | "invite_to_group" | "remove_user" | "import_contacts" | "add_contact" | "send_contact" | "send_message" | "reply_to_message" | "forward_message" | "forward_messages" | "send_sticker" | "send_gif" | "send_voice" | "send_scheduled_message" | "delete_scheduled_message" | "pin_message" | "unpin_message" | "unpin_all_messages" | "create_poll" | "block_user" | "unblock_user" | "mute_chat" | "unmute_chat" | "archive_chat" | "unarchive_chat" | "leave_chat" | "join_chat_by_link" | "create_folder" | "delete_folder" | "add_chat_to_folder" | "remove_chat_from_folder" | "save_draft" | "clear_draft" | "toggle_slow_mode" | "enable_forum_topics" | "create_forum_topic" | "set_profile_photo" | "delete_profile_photo" | "update_profile" | "set_bot_commands" | "export_chat_invite" | "import_chat_invite" | "watch" | "task" | "kill")
+}
+
+fn action_before(name: &str, args: &serde_json::Value) -> Option<(String, String)> {
+    if name != "write" && name != "edit" {
+        return None;
+    }
+    let path = args.get("path").and_then(|v| v.as_str())?;
+    let old = std::fs::read_to_string(path).ok()?;
+    Some((path.to_string(), old))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::compact_args;
+    use super::{compact_args, compact_command, one_line};
     use serde_json::json;
 
     #[test]
@@ -604,10 +734,62 @@ mod tests {
     #[test]
     fn compact_args_truncates() {
         let long = "a".repeat(50);
-        let args = json!({"command": long});
+        let args = json!({"path": long});
         let s = compact_args(&args);
         assert!(s.contains("..."));
         assert!(!s.contains(&long));
+    }
+
+    #[test]
+    fn compact_args_command_uses_command_shortening() {
+        let long = "z".repeat(200);
+        let args = json!({"command": long});
+        let s = compact_args(&args);
+        assert!(s.starts_with("command="), "got: {s}");
+        assert!(!s.contains(&long));
+        assert!(s.contains('…'));
+    }
+
+    #[test]
+    fn one_line_strips_ansi_and_newlines() {
+        assert_eq!(one_line("abc\x1b[31mdef\x1b[0m"), "abcdef");
+        assert_eq!(one_line("line1\nline2\r\nline3"), "line1 line2 line3");
+        assert_eq!(
+            one_line("  spaced   out \t text  "),
+            "spaced out text"
+        );
+    }
+
+    #[test]
+    fn one_line_truncates_long() {
+        let long = "x".repeat(200);
+        let s = one_line(&long);
+        assert!(s.len() < 100);
+        assert!(s.ends_with('…'));
+    }
+
+    #[test]
+    fn compact_command_keeps_important_tail() {
+        assert_eq!(
+            compact_command("cd src && cargo build"),
+            "\"cargo build\""
+        );
+        assert_eq!(
+            compact_command("cd src && mkdir -p sub && git add . && git commit -m x"),
+            "\"git commit -m x\""
+        );
+        assert_eq!(compact_command("  git push  "), "\"git push\"");
+        assert_eq!(compact_command("   "), "");
+    }
+
+    #[test]
+    fn compact_command_truncates_long_tail() {
+        let long = format!("cd x && {}", "a".repeat(200));
+        let s = compact_command(&long);
+        assert!(s.len() < 80);
+        assert!(s.contains('…'));
+        let inner: String = s.trim_matches('"').to_string();
+        assert!(inner.ends_with('…'));
     }
 }
 

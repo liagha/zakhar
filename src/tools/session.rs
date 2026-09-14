@@ -40,9 +40,14 @@ impl Handler for SessionTool {
                 match sessions.iter().find(|s| s.id == target) {
                     Some(s) => {
                         crate::invoke::resume_session(s.id.clone());
+                        let label = if s.title.is_empty() {
+                            format!("created {}", s.created_at)
+                        } else {
+                            s.title.clone()
+                        };
                         Ok(format!(
-                            "resuming session {} (created {}, {} messages)",
-                            &s.id[..8], s.created_at, s.message_count
+                            "resuming session {} — {} ({} messages)",
+                            &s.id[..8], label, s.message_count
                         ))
                     }
                     None => Ok("no saved sessions to resume".to_string()),

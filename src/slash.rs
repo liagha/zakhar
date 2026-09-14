@@ -115,7 +115,7 @@ fn dispatch(cmd: &str, args: &str, session: &mut crate::session::Session, runner
             out.push_str("  /undo [n] - revert the last n mutable tool operations\n");
             out.push_str("  /audit [n] - show the agent ledger of tool operations\n");
             out.push_str("  /sessions - list saved sessions\n");
-            out.push_str("  /resume [<id>] - resume a previous session (default: newest)\n");
+            out.push_str("  /resume [<id>] - resume a previous session (shows picker if no id)\n");
             out.push_str("  /diff <id1> <id2> - compare two sessions (asks, tools, answers)\n");
             out.push_str("  /kill - kill all background tasks\n");
             out.push_str("  /kill <id> [...] - kill specific task(s)\n");
@@ -171,13 +171,50 @@ fn dispatch(cmd: &str, args: &str, session: &mut crate::session::Session, runner
         "/sessions" => crate::session::list_formatted(),
         "/resume" => {
             if args.is_empty() {
-                return match crate::session::last() {
-                    Some(id) => {
-                        crate::invoke::resume_session(id.clone());
-                        format!("resuming newest session {}", &id[..8])
+                let sessions = crate::session::list();
+                if sessions.is_empty() {
+                    return "no saved sessions to resume".to_string();
+                }
+                let mut out = String::from("saved sessions:\n");
+                for (i, s) in sessions.iter().enumerate() {
+                    let date = chrono::DateTime::parse_from_rfc3339(&s.created_at)
+                        .ok()
+                        .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+                        .unwrap_or_else(|| s.created_at.clone());
+                    let label = if s.title.is_empty() {
+                        format!("{} messages)", s.message_count)
+                    } else {
+                        format!("{} ({} messages)", s.title, s.message_count)
+                    };
+                    out.push_str(&format!("  {}. {} — {} — {}\n", i + 1, &s.id[..8], date, label));
+                }
+                if is_user {
+                    print!("{out}");
+                    print!("\npick session (1-{}) or Enter for newest: ", sessions.len());
+                    use std::io::Write;
+                    let _ = std::io::stdout().flush();
+                    let mut input = String::new();
+                    if std::io::stdin().read_line(&mut input).is_ok() {
+                        let input = input.trim();
+                        if input.is_empty() {
+                            let id = sessions.first().unwrap().id.clone();
+                            crate::invoke::resume_session(id.clone());
+                            return format!("resuming newest session {}", &id[..8]);
+                        }
+                        if let Ok(n) = input.parse::<usize>()
+                            && n >= 1
+                            && n <= sessions.len()
+                        {
+                            let id = sessions[n - 1].id.clone();
+                            crate::invoke::resume_session(id.clone());
+                            return format!("resuming session {}", &id[..8]);
+                        }
+                        return format!("invalid choice '{input}', enter 1-{}", sessions.len());
                     }
-                    None => "no saved sessions to resume".to_string(),
-                };
+                }
+                let id = sessions.first().unwrap().id.clone();
+                crate::invoke::resume_session(id.clone());
+                return format!("resuming newest session {}", &id[..8]);
             }
             match crate::session::find(args) {
                 Some(id) => {

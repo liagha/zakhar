@@ -51,6 +51,45 @@ impl Session {
             .unwrap_or_default()
     }
 
+    /// A short content-derived label for the session, from its first user
+    /// message: lowercase, truncated, no leading slash.
+    pub fn title(&self) -> String {
+        let raw = self.first_user();
+        if raw.is_empty() {
+            return String::new();
+        }
+        let cleaned: String = raw
+            .chars()
+            .filter(|c| !c.is_control())
+            .collect::<String>()
+            .trim()
+            .to_string();
+        let cleaned = cleaned.trim_start_matches('/');
+        if cleaned.is_empty() {
+            return String::new();
+        }
+        let lower = cleaned.to_lowercase();
+        let mut out = String::new();
+        let mut prev_sep = true;
+        for c in lower.chars() {
+            if c.is_alphanumeric() {
+                out.push(c);
+                prev_sep = false;
+            } else if !prev_sep {
+                out.push(' ');
+                prev_sep = true;
+            }
+        }
+        let out = out.trim();
+        let short: String = out.chars().take(50).collect();
+        let short = short.trim().to_string();
+        if short.is_empty() {
+            String::new()
+        } else {
+            short
+        }
+    }
+
     pub fn last_assistant(&self) -> String {
         self.messages
             .iter()
@@ -84,6 +123,8 @@ pub struct SessionInfo {
     pub id: String,
     pub created_at: String,
     pub message_count: usize,
+    pub ask: String,
+    pub title: String,
 }
 
 pub fn list() -> Vec<SessionInfo> {
@@ -97,11 +138,13 @@ pub fn list() -> Vec<SessionInfo> {
             let p = e.path();
             if p.extension().map(|ext| ext == "json").unwrap_or(false)
                 && let Ok(text) = std::fs::read_to_string(&p)
-                    && let Ok(s) = serde_json::from_str::<Session>(&text) {
+                && let Ok(s) = serde_json::from_str::<Session>(&text) {
                         sessions.push(SessionInfo {
-                            id: s.id,
-                            created_at: s.created_at,
+                            id: s.id.clone(),
+                            created_at: s.created_at.clone(),
                             message_count: s.messages.len(),
+                            ask: s.first_user(),
+                            title: s.title(),
                         });
                     }
         }
@@ -121,11 +164,14 @@ pub fn list_formatted() -> String {
             .ok()
             .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
             .unwrap_or_else(|| s.created_at.clone());
+        let label = if s.title.is_empty() {
+            format!("{}{} messages)", " ".repeat(0), s.message_count)
+        } else {
+            format!("{} ({} messages)", s.title, s.message_count)
+        };
         out.push_str(&format!(
-            "  {} — {} ({} messages)\n",
-            &s.id[..8],
-            date,
-            s.message_count
+            "  {} — {} — {}\n",
+            &s.id[..8], date, label
         ));
     }
     out
@@ -358,6 +404,23 @@ mod tests {
         s.messages.push(msg(Role::User, "  multi\nline  "));
         assert_eq!(s.first_user(), "multi line");
         assert_eq!(Session::new().first_user(), "");
+    }
+
+    #[test]
+    fn title_is_clean_short_name() {
+        let mut s = Session::new();
+        s.messages.push(msg(Role::User, "read the project and summarize"));
+        assert_eq!(s.title(), "read the project and summarize");
+        let mut t = Session::new();
+        t.messages.push(msg(Role::User, "  /**/ Refactor   FOO !! "));
+        let title = t.title();
+        assert!(!title.contains("**"), "got: {title}");
+        let mut u = Session::new();
+        u.messages.push(msg(Role::User, "/clear"));
+        assert_eq!(u.title(), "clear");
+        let mut v = Session::new();
+        v.messages.push(msg(Role::User, ""));
+        assert_eq!(v.title(), "");
     }
 
     #[test]

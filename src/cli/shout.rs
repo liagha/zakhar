@@ -97,7 +97,7 @@ pub async fn shout(phrase: String) -> anyhow::Result<()> {
     let _ = crate::memory::mind::dispatch(&crate::paths::home());
 
     if let Some(seed) = crate::invoke::chat_message() {
-        super::chat(None, None, None, true, false, false, false, seed).await?;
+        super::chat(None, None, None, true, false, false, false, None, seed).await?;
         return Ok(());
     }
 

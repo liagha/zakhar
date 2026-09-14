@@ -77,6 +77,27 @@ impl<'a> Ui<'a> {
         }
     }
 
+    pub fn action_call(&mut self, name: &str, args: &str) {
+        match self {
+            Ui::Simple(u) => u.action_call(name, args),
+            Ui::Modern(u) => u.action_call(name, args),
+        }
+    }
+
+    pub fn action_result(&mut self, name: &str, preview: &str, byte_len: usize) {
+        match self {
+            Ui::Simple(u) => u.action_result(name, preview, byte_len),
+            Ui::Modern(u) => u.action_result(name, preview, byte_len),
+        }
+    }
+
+    pub fn diff_block(&mut self, diff_text: &str) {
+        match self {
+            Ui::Simple(u) => u.diff_block(diff_text),
+            Ui::Modern(u) => u.diff_block(diff_text),
+        }
+    }
+
     pub fn text(&mut self, text: &str) {
         match self {
             Ui::Simple(u) => u.text(text),
@@ -95,6 +116,13 @@ impl<'a> Ui<'a> {
         match self {
             Ui::Simple(u) => u.prompt(),
             Ui::Modern(u) => u.prompt(),
+        }
+    }
+
+    pub fn clear_line(&mut self) {
+        match self {
+            Ui::Simple(u) => u.clear_line(),
+            Ui::Modern(u) => u.clear_line(),
         }
     }
 

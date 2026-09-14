@@ -2,7 +2,7 @@
 //! engine. Most commands (chat, shout, mobile, daemon, mcp) delegate to the
 //! library; paths/clean/completion run first without migrations.
 
-use zakhar::cli::{chat, clean, daemon, mobile, models, shout};
+use zakhar::cli::{chat, clean, daemon, mobile, models, sessions, shout};
 
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
@@ -33,10 +33,14 @@ enum Command {
         plan: bool,
         #[arg(long)]
         simple: bool,
+        #[arg(long, short = 'r', value_name = "ID", num_args = 0..=1, default_missing_value = "")]
+        resume: Option<String>,
     },
     Models {
         provider: Option<String>,
     },
+    /// List saved chat sessions.
+    Sessions,
     Mobile {
         message: String,
         #[arg(long)]
@@ -87,11 +91,13 @@ async fn main() -> anyhow::Result<()> {
             auto,
             plan,
             simple,
+            resume,
         }), _) => {
-            chat(provider, model, agent, invoke, auto, plan, simple, String::new())
+            chat(provider, model, agent, invoke, auto, plan, simple, resume, String::new())
                 .await?
         }
         (Some(Command::Models { provider }), _) => models(provider).await?,
+        (Some(Command::Sessions), _) => sessions(),
         (Some(Command::Mobile { message, auto, mock }), _) => {
             mobile(message, auto, mock).await?
         }

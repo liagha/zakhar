@@ -42,11 +42,14 @@ Everything is natural language:
 
 ```sh
 zakhar chat                       # interactive chat
+zakhar chat --resume              # continue the newest session
+zakhar chat -r 2168127            # continue session 2168127 (prefix ok)
 zakhar make a todo app            # one-shot: understand the phrase, do the task
 zakhar find "TODO" in src         # bare words = agent runs and shows you lines
 zakhar delete the logs            # mutating actions wait for your [y/n]
 zakhar make sure I don't forget my pills at 11am   # AI schedules a reminder
 zakhar models                     # list providers and models
+zakhar sessions                   # list saved chat sessions
 zakhar paths                      # where everything lives
 ```
 
@@ -56,7 +59,11 @@ Reminders are an AI tool: the model turns a phrase like *"my pills at 11am"* int
 
 ## Terminal
 
-Markdown streams in, rendered live: headings, bold, code fences (with syntax-style coloring on the fence line), inline code, lists, and tables are colored as each completes. The in-progress line is shown as a dim preview that repaints in place without flicker. Tool steps appear as `▸ call` / `▾ result` lines, and each turn ends with a summary line like `done · 4.2s · 1 tool(s) · provider/model`. Add `--simple` to `zakhar chat` for a plain no-ANSI output.
+Markdown streams in, rendered live: headings, bold, code fences (with syntax-style coloring on the fence line), inline code, lists, and tables are colored as each completes. The in-progress line is shown as a dim preview that repaints in place without flicker. Tool steps appear as `▸ call` / `▾ result` lines, and each turn ends with a summary line like `done · 4.2s · 1 tool(s) · provider/model`. Stream retries are shown inline as a self-clearing status line (`↻ retrying stream (1/3): cause…`) and vanish once the connection recovers — only a final give-up after 3 attempts produces a hard error. Add `--simple` to `zakhar chat` for a plain no-ANSI output.
+
+Thinking (`Thought:`) renders once per block as one dimmed italic section, with later thoughts flowing as continuations until real output begins — no per-line headers. Mutating actions (write, edit, bash, sending files, chat mutations, …) are highlighted with a bright `⚡` marker and their file changes are shown as a colored diff (`+` green / `-` red) after the result, so you can see exactly what the agent is doing. Read-only tools stay dimmed; only real changes stand out.
+
+`zakhar chat` uses a full readline prompt: arrow keys move the cursor, history is preserved across sessions (`~/.zakhar/history.txt`), and Ctrl-D exits. In pipes or non-tty contexts it falls back to plain line input automatically.
 
 ## Memory
 
@@ -76,7 +83,7 @@ Slash commands in `zakhar chat`:
 /memory   /undo     /audit    /sessions /resume   /diff     /kill
 ```
 
-`/memory` browses knowledge and recent events, and has subcommands: `/memory drop <key>` forgets an entry, `/memory search <text>` recalls, `/memory stale [days]` lists and prunes decayed items, `/memory compact` archives events, and `/memory mind` triggers a background consolidation. `/resume` (with no arguments it re-opens the newest session) and `/sessions` pick up past conversations; `/diff <id1> <id2>` compares two sessions — the asks, tools used, and final answers on each side.
+`/memory` browses knowledge and recent events, and has subcommands: `/memory drop <key>` forgets an entry, `/memory search <text>` recalls, `/memory stale [days]` lists and prunes decayed items, `/memory compact` archives events, and `/memory mind` triggers a background consolidation. `/resume` (with no arguments it shows a numbered list of recent sessions to choose from) and `/sessions` pick up past conversations (also available standalone as `zakhar sessions`). Sessions get a short content-based title from their opening request, so `zakhar sessions` shows `id — date — clear title (N messages)` instead of opaque ids. `/diff <id1> <id2>` compares two sessions — the asks, tools used, and final answers on each side.
 
 ## Config
 
@@ -87,6 +94,7 @@ Everything zakhar writes lives in one place — `~/.zakhar`:
   config/config.toml   # providers + agents
   config/profile.md    # who you are (fed to the AI)
   sessions/            # conversation history
+  history.txt          # readline history
   reminders.json       # reminders
   jobs/                # background job queue (daemon)
 ```
@@ -168,6 +176,9 @@ code = "#6b7280"
 link = "bright_blue"
 summary = "dim"
 quote = "none"
+action = "bright_white"   # mutating tool calls (⚡)
+add = "green"             # diff additions
+del = "red"               # diff deletions
 ```
 
 ## Model routing

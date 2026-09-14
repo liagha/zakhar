@@ -10,8 +10,7 @@ pub struct Modern<'a> {
     md: markdown::Stream<'a>,
     pal: &'a Palette,
     has_status: bool,
-    reason: String,
-    reason_dirty: bool,
+    reason_printed: bool,
     mark_printed: bool,
     preview: String,
     preview_at: Option<Instant>,
@@ -26,8 +25,7 @@ impl<'a> Modern<'a> {
             md: markdown::Stream::new(pal),
             pal,
             has_status: false,
-            reason: String::new(),
-            reason_dirty: false,
+            reason_printed: false,
             mark_printed: false,
             preview: String::new(),
             preview_at: None,
@@ -68,14 +66,12 @@ impl<'a> Modern<'a> {
 
     pub fn reasoning(&mut self, text: &str) {
         self.mark_printed = false;
-        for c in text.chars() {
-            if c == '\n' {
-                self.flush_reason();
-            } else {
-                self.reason.push(c);
-                self.reason_dirty = true;
-            }
+        if !self.reason_printed {
+            self.reason_printed = true;
+            print!("{}", self.pal.thought.on("Thought: ").italic());
         }
+        print!("{}", self.pal.thought.on(text).italic());
+        flush();
     }
 
     pub fn tool_call(&mut self, calls_summary: &str) {
@@ -104,11 +100,53 @@ impl<'a> Modern<'a> {
         flush();
     }
 
+    pub fn action_call(&mut self, name: &str, args: &str) {
+        self.clear_status();
+        self.clear_preview();
+        self.end_line();
+        println!(
+            "{} {} {}",
+            self.pal.action.on("⚡"),
+            self.pal.action.on_bold(name),
+            self.pal.action.on(args)
+        );
+        flush();
+    }
+
+    pub fn action_result(&mut self, name: &str, preview: &str, byte_len: usize) {
+        self.clear_status();
+        self.clear_preview();
+        println!(
+            "  {} {}: {}",
+            self.pal.action.on("↳"),
+            self.pal.action.on_bold(name),
+            self.pal.action.on(preview)
+        );
+        let _ = byte_len;
+        flush();
+    }
+
+    pub fn diff_block(&mut self, diff_text: &str) {
+        self.clear_status();
+        self.clear_preview();
+        for line in diff_text.lines() {
+            if let Some(rest) = line.strip_prefix('+') {
+                println!("{}", self.pal.add.on(&format!("+{rest}")));
+            } else if let Some(rest) = line.strip_prefix('-') {
+                println!("{}", self.pal.del.on(&format!("-{rest}")));
+            } else if line.starts_with("@@") {
+                println!("{}", self.pal.note.on(line));
+            } else {
+                println!("{}", self.pal.code.on(line));
+            }
+        }
+        flush();
+    }
+
     pub fn text(&mut self, text: &str) {
         self.clear_status();
-        if self.reason_dirty {
-            self.flush_reason();
-            self.mark_printed = false;
+        if self.reason_printed {
+            self.close_reason();
         }
         let out = self.md.feed(text);
         if !out.is_empty() {
@@ -128,8 +166,8 @@ impl<'a> Modern<'a> {
 
     pub fn end(&mut self) {
         self.clear_status();
-        if self.reason_dirty {
-            self.flush_reason();
+        if self.reason_printed {
+            self.close_reason();
         }
         self.clear_preview();
         let tail = self.md.finish();
@@ -205,18 +243,20 @@ impl<'a> Modern<'a> {
         }
     }
 
-    fn flush_reason(&mut self) {
-        if !self.reason.is_empty() {
-            let label = self.pal.thought.on("Thought:").italic();
-            let body = self.pal.thought.on(&self.reason).italic();
-            println!("{} {}", label, body);
+    fn close_reason(&mut self) {
+        if self.preview.is_empty() {
+            println!();
+            flush();
         }
-        self.reason.clear();
-        self.reason_dirty = false;
-        flush();
+        self.reason_printed = false;
     }
 
-    fn clear_status(&mut self) {
+    pub fn clear_line(&mut self) {
+    self.clear_status();
+    self.clear_preview();
+}
+
+fn clear_status(&mut self) {
         if self.has_status {
             print!("\r\x1b[2K");
             self.has_status = false;
