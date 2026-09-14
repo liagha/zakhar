@@ -63,6 +63,20 @@ impl<'a> Ui<'a> {
         }
     }
 
+    pub fn expand_reasoning(&mut self) {
+        match self {
+            Ui::Simple(u) => u.expand_reasoning(),
+            Ui::Modern(u) => u.expand_reasoning(),
+        }
+    }
+
+    pub fn reset_reasoning(&mut self) {
+        match self {
+            Ui::Simple(u) => u.reset_reasoning(),
+            Ui::Modern(u) => u.reset_reasoning(),
+        }
+    }
+
     pub fn tool_call(&mut self, calls_summary: &str) {
         match self {
             Ui::Simple(u) => u.tool_call(calls_summary),

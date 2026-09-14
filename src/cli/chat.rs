@@ -262,14 +262,16 @@ pub async fn chat(
                 }
             };
             let watch = crate::term::Interrupt::armed();
+            ui.reset_reasoning();
             let mut full = String::new();
-            let mut saw_reasoning = false;
-            let mut had_reasoning = false;
             let mut tool_parts: HashMap<usize, ToolCallPartAccum> = HashMap::new();
             let mut events_seen = 0usize;
             let mut failed: Option<anyhow::Error> = None;
 
             while let Some(event) = stream.next().await {
+                if watch.take_expand() {
+                    ui.expand_reasoning();
+                }
                 if watch.is_set() {
                     break;
                 }
@@ -283,14 +285,10 @@ pub async fn chat(
                 match event {
                     crate::provider::ChatStreamEvent::Reasoning(t) => {
                         events_seen += 1;
-                        saw_reasoning = true;
                         ui.reasoning(&t);
                     }
                     crate::provider::ChatStreamEvent::Text(t) => {
                         events_seen += 1;
-                        if saw_reasoning && !had_reasoning {
-                            had_reasoning = true;
-                        }
                         full.push_str(&t);
                         ui.text(&t);
                     }
